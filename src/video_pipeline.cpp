@@ -2,6 +2,7 @@
 #include "keyboard_interface.h"
 #include "calibration.h"
 #include "img_processing.h"
+#include "annotate.h"
 
 // constructor
 VideoPipeline::VideoPipeline(std::string input_file, 
@@ -93,8 +94,7 @@ cv::Mat VideoPipeline::apply_processing(cv::Mat frame_in){
   	frame_out = frame_in;
    	// cv::undistort(std::move(frame_in), frame_out, cal.cam_matrix, cal.dist_coeff);
 
-    // add side frame
-    cv::Mat side_bar = cv::Mat::zeros(cv::Size(400, frame_size_input.height), frame_out.type());
-    cv::hconcat(frame_out, side_bar, frame_out);
+    // add side frame    
+    frame_out = annotate::add_side_panel(frame_out);
   	return std::move(frame_out);
 }

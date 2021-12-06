@@ -44,18 +44,13 @@ namespace paths{
 };
 
 void save_calibration_params(const cv::Mat &  Camera_Matrix, const cv::Mat & Distortion_Coefficients){
-  	std::cout << paths::camera_mat_file << "\n";
     xml_io::write_matrix2xml(Camera_Matrix, paths::camera_mat_file);
-  	std::cout << paths::distortion_coeffs_file << "\n";
     xml_io::write_matrix2xml(Distortion_Coefficients, paths::distortion_coeffs_file);
 }
 
 void read_calibration_params(cv::Mat & Camera_Matrix, cv::Mat & Distortion_Coefficients){
-    std::cout << paths::camera_mat_file << "\n" << paths::distortion_coeffs_file << "\n\n";    
     Camera_Matrix = xml_io::read_xml2matrix(paths::camera_mat_file);
     Distortion_Coefficients = xml_io::read_xml2matrix(paths::distortion_coeffs_file);
-    std::cout << "CM = \n" << Camera_Matrix << "\n\n";
-    std::cout << "DC = \n" << Distortion_Coefficients << "\n\n";
 }
 
 calParams get_calibration_params(bool force_redo){
@@ -84,12 +79,13 @@ calParams get_calibration_params(bool force_redo){
       std::string cal_img_path = "../data/camera_cal";
       cv::Size img_size;
       for (const auto & img : fs::directory_iterator(cal_img_path)){
+          // skip if not .jpg
+          if (std::string(img.path()).find(".jpg") == std::string::npos) continue;
+
           // cf. https://docs.opencv.org/3.4/d9/d0c/group__calib3d.html#ga93efa9b0aa890de240ca32b11253dd4a
           std::vector<cv::Point2f> corners; //this will be filled by the detected corners
-
           cv::Mat image_gray = cv::imread(img.path(), cv::IMREAD_GRAYSCALE);
           img_size = image_gray.size();
-          // grayscl = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
           //CALIB_CB_FAST_CHECK saves a lot of time on images
           //that do not contain any chessboard corners
@@ -109,9 +105,7 @@ calParams get_calibration_params(bool force_redo){
       cv::calibrateCamera(nominal_corners, actual_corners, img_size, Camera_Matrix, Distortion_Coefficients, rvecs, tvecs);
 
       // save outputs
-      std::cout << "Saving...\n";  
       save_calibration_params(Camera_Matrix, Distortion_Coefficients);
-      std::cout << "Saved...\n";
   
   	// B) Restore  previous computation
 	} else {
