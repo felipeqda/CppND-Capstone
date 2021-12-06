@@ -1,10 +1,22 @@
-cmake_minimum_required(VERSION 3.7)
+cmake_minimum_required(VERSION 3.11.3)
 
-add_definitions(-std=c++17)
+project(Capstone)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -pthread")
 
-set(CXX_FLAGS "-Wall")
-set(CMAKE_CXX_FLAGS, "${CXX_FLAGS}")
+# add OpenCv
+find_package(OpenCV 4.1 REQUIRED)
+include_directories(${OpenCV_INCLUDE_DIRS})
+link_directories(${OpenCV_LIBRARY_DIRS})
+add_definitions(${OpenCV_DEFINITIONS})
 
-project(HelloWorld)
+# Find all executables, including headers
+file(GLOB project_SRCS src/*.cpp include/*.h) 
 
-add_executable(HelloWorld src/main.cpp)
+# Add project executable
+add_executable(videopipe ${project_SRCS})
+target_link_libraries(videopipe ${OpenCV_LIBRARIES} stdc++fs)
+target_include_directories(videopipe PRIVATE include)
+target_compile_options(videopipe PRIVATE -Wall -Wextra)
+
+# Allow debugging
+set(CMAKE_BUILD_TYPE Debug)

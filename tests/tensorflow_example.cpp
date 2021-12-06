@@ -36,7 +36,7 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 
-using tf = tensorflow;
+namespace tf = tensorflow;
 
 
 // gather the output of the convolutional neural network (boxes containing objects, scores and labels)
@@ -44,9 +44,9 @@ class ClassifierOutput{
     public:
         ClassifierOutput(std::vector<float> tf_box, float tf_score, int tf_label);
 		// acessors
-		std::vector<float> box  { return _box;  }
-		std::vector<float> score{ return score_;}
-		std::vector<float> label{ return label_;}
+		std::vector<float> box()  { return box_;  }
+		std::vector<float> score(){ return score_; }
+		std::vector<float> label(){ return label_; }
     private:
         std::vector<int> box_;
         float score_;
