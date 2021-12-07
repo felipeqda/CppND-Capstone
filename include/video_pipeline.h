@@ -11,6 +11,7 @@
 #include "tqdm.h"
 #include "keyboard_interface.h"
 #include "calibration.h"
+#include "img_processing.h"
 
 class VideoPipeline{
     private:
@@ -33,6 +34,7 @@ class VideoPipeline{
         bool cal_available{false};
         calParams cal;  // struct with cv::Mats needed for calibration
 
+        Warp2TopDown topdown_transform;
 
     public:
         //constructor

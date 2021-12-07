@@ -9,7 +9,7 @@
 // requires a higher version of g++
 # if __has_include(<filesystem>)
     #include <filesystem>  
-    namespace fs = std::filesystem;  
+    namespace fs = std::filesystem;  clear
 #else
     // works for virtual machine version ==> requires target_link_libraries(... stdc++fs) in CMakeLists.txt
     #include <experimental/filesystem>
@@ -79,13 +79,12 @@ calParams get_calibration_params(bool force_redo){
       std::string cal_img_path = "../data/camera_cal";
       cv::Size img_size;
       for (const auto & img : fs::directory_iterator(cal_img_path)){
-          // skip if not .jpg
-          if (std::string(img.path()).find(".jpg") == std::string::npos) continue;
-
           // cf. https://docs.opencv.org/3.4/d9/d0c/group__calib3d.html#ga93efa9b0aa890de240ca32b11253dd4a
           std::vector<cv::Point2f> corners; //this will be filled by the detected corners
+
           cv::Mat image_gray = cv::imread(img.path(), cv::IMREAD_GRAYSCALE);
           img_size = image_gray.size();
+          // grayscl = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
           //CALIB_CB_FAST_CHECK saves a lot of time on images
           //that do not contain any chessboard corners
@@ -105,7 +104,9 @@ calParams get_calibration_params(bool force_redo){
       cv::calibrateCamera(nominal_corners, actual_corners, img_size, Camera_Matrix, Distortion_Coefficients, rvecs, tvecs);
 
       // save outputs
+      std::cout << "Saving...\n";  
       save_calibration_params(Camera_Matrix, Distortion_Coefficients);
+      std::cout << "Saved...\n";
   
   	// B) Restore  previous computation
 	} else {

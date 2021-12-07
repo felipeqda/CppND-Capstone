@@ -27,6 +27,10 @@ VideoPipeline::VideoPipeline(std::string input_file,
         pbar.set_ETAformat(std::string(""));  // format must be printfcompatible!      
     }
 
+    // Prepare transform object
+    topdown_transform = Warp2TopDown();
+
+
 }
 
 // open video for reading, return success flag
@@ -86,15 +90,19 @@ bool VideoPipeline::quit_loop(bool verbose=false){
 cv::Mat VideoPipeline::apply_processing(cv::Mat frame_in){
 	cv::Mat frame_out;  // pass by value ==> copy
     
-  	// undistort image based on calibration parameters
+  	// I) Calibration: Undistort image based on calibration parameters
     if(!cal_available){      
   		cal = get_calibration_params();  
       	cal_available=true;
     }
-  	frame_out = frame_in;
-   	// cv::undistort(std::move(frame_in), frame_out, cal.cam_matrix, cal.dist_coeff);
+   	cv::undistort(std::move(frame_in), frame_out, cal.cam_matrix, cal.dist_coeff);
 
-    // add side frame    
+    // II) Warp image to bird's eye view
+    frame_out = topdown_transform.warp(frame_out);
+
+    // III) color transformations and gradients
+
+    // N) add side frame    
     frame_out = annotate::add_side_panel(frame_out);
   	return std::move(frame_out);
 }

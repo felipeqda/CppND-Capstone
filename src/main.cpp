@@ -36,8 +36,6 @@ int main(int argc, char *argv[]){
 
     cv::Mat frame_in, frame_out; // containers to read and output a frame
 
-
-
     while(true){ //Show the image captured in the window and repeat 
 
         frame_in = pipeline.get_frame();
@@ -46,11 +44,12 @@ int main(int argc, char *argv[]){
             break;
         }
         // call image processing pipeline on frame
+        cv::resize(frame_in, frame_in, cv::Size(), 0.5, 0.5, cv::INTER_AREA);  // shrink input frame to display
+
       	// frame_out = frame_in;
         frame_out = pipeline.apply_processing(frame_in);
 
-        // transform input frame and display
-        cv::resize(frame_out, frame_out, cv::Size(), 0.5, 0.5, cv::INTER_AREA);  // shrink input frame to display
+        // display
         pipeline.display(frame_out);
 
         // allow user input for quitting/stopping playback at a frame
