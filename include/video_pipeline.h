@@ -22,6 +22,7 @@ class VideoPipeline{
         cv::Size frame_size_input;
         int n_frames{0}, idx_frame{-1};
         
+        float frame_reduction_; // shrink factor for frame
         int kb_delay, default_delay{5}; // delay in [ms], 0 means wait indefinitely
         tqdm pbar;  // progress bar
 
@@ -38,7 +39,7 @@ class VideoPipeline{
 
     public:
         //constructor
-        VideoPipeline(std::string file_in, std::string win_label);
+        VideoPipeline(std::string file_in, std::string win_label, float frame_reduction);
 
         bool read_video(std::string path);
         bool write_video(std::string path, cv::Size output_size);
@@ -61,6 +62,9 @@ class VideoPipeline{
         }
         int frame_count(){ 
             return n_frames; 
+        }
+        float reduction(){
+            return frame_reduction_;
         }
 
         // setters

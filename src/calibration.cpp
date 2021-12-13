@@ -104,9 +104,7 @@ calParams get_calibration_params(bool force_redo){
       cv::calibrateCamera(nominal_corners, actual_corners, img_size, Camera_Matrix, Distortion_Coefficients, rvecs, tvecs);
 
       // save outputs
-      std::cout << "Saving...\n";  
       save_calibration_params(Camera_Matrix, Distortion_Coefficients);
-      std::cout << "Saved...\n";
   
   	// B) Restore  previous computation
 	} else {

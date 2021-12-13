@@ -6,10 +6,12 @@
 
 // constructor
 VideoPipeline::VideoPipeline(std::string input_file, 
-                             std::string win_label="Input Video"){
+                             std::string win_label="Input Video",
+                             float frame_reduction = 1.0){
     // open file for reading
     filename = input_file;
     valid_video = this->read_video(filename);
+    frame_reduction_ = frame_reduction;
 
     if (valid_video){
         // Create Window
@@ -28,8 +30,7 @@ VideoPipeline::VideoPipeline(std::string input_file,
     }
 
     // Prepare transform object
-    topdown_transform = Warp2TopDown();
-
+    topdown_transform = Warp2TopDown(frame_reduction);
 
 }
 
@@ -69,6 +70,10 @@ cv::Mat VideoPipeline::get_frame(){
         this->input_video >> frame;
         pbar.progress(++idx_frame, n_frames);
     }
+    if (this->reduction() != 1.0  && !frame.empty()){
+        cv::resize(frame, frame, cv::Size(), this->reduction(), this->reduction(), cv::INTER_AREA);  // shrink input frame
+    }
+
     return std::move(frame);
 }
 
@@ -101,8 +106,9 @@ cv::Mat VideoPipeline::apply_processing(cv::Mat frame_in){
     frame_out = topdown_transform.warp(frame_out);
 
     // III) color transformations and gradients
+    frame_out = ImgProcessing::mask_lane(frame_out);
 
     // N) add side frame    
-    frame_out = annotate::add_side_panel(frame_out);
+    // frame_out = annotate::add_side_panel(frame_out);
   	return std::move(frame_out);
 }

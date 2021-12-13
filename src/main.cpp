@@ -28,9 +28,11 @@ int main(int argc, char *argv[]){
     help();
 
     std::string input_file = std::string("/home/workspace/CarND-Advanced-Lane-Lines/project_video.mp4");
+    float img_reduction = 0.5;
 
     VideoPipeline pipeline = VideoPipeline(input_file,
-                                           std::string("Input Video: (ESPACE = pause/unpause, ENTER = step, ESC = quit)")) ;
+                                           std::string("Input Video: (ESPACE = pause/unpause, ENTER = step, ESC = quit)"),
+                                           img_reduction) ;
     std::cout << "Input video resolution: Width=" << pipeline.width() << "  Height=" << pipeline.height()
               << " with n_frames = " << pipeline.frame_count() << std::endl;
 
@@ -43,13 +45,13 @@ int main(int argc, char *argv[]){
             std::cout << "Input video is over!" << std::endl;
             break;
         }
-        // call image processing pipeline on frame
-        cv::resize(frame_in, frame_in, cv::Size(), 0.5, 0.5, cv::INTER_AREA);  // shrink input frame to display
 
+        // call image processing pipeline on frame
       	// frame_out = frame_in;
         frame_out = pipeline.apply_processing(frame_in);
 
         // display
+        // cv::resize(frame_out, frame_out, cv::Size(), 0.5, 0.5, cv::INTER_AREA);  // shrink input frame to display
         pipeline.display(frame_out);
 
         // allow user input for quitting/stopping playback at a frame
