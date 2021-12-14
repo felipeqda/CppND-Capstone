@@ -2,6 +2,7 @@
 #define IMG_H
 
 #include <vector>
+#include <algorithm>
 #include <iostream>
 #include "opencv2/imgproc.hpp"
 #include "opencv2/imgcodecs.hpp"
@@ -11,11 +12,19 @@
 namespace ImgProcessing{
     enum class orientation {x, y};
 
-    cv::Mat mask_lane(cv::Mat & frame_in);
+    struct LaneLine{
+        std::vector<cv::Point> pts;
+        std::vector<double> poly_cfs;
+        double MSE;
+    };
+
+    cv::Mat get_lane_limits_mask(cv::Mat & frame_in);
+    cv::Mat mask_frame(cv::Mat & frame, cv::Mat & mask);
     cv::Mat threshold_between(cv::Mat & frame, int thresh_min, int threshold_max);
     cv::Mat abs_sobel_thresh(cv::Mat frame, orientation dir, 
                              int thresh_min, int threshold_max, int ksize);
-
+    std::vector<LaneLine> fit_xy_from_mask(cv::Mat & mask, cv::Mat & frame, 
+                                           int n_windows=9, int margin=50, size_t minpix=10, bool annotate=true);
 }
 
 

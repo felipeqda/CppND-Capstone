@@ -1,5 +1,5 @@
 #include "img_processing.h"
-
+#include "math.h"
 
 // auxiliary dot-product operation:
 // https://stackoverflow.com/questions/27981214/opencv-how-do-i-multiply-point-and-matrix-cvmat
@@ -96,6 +96,14 @@ void Warp2TopDown::show_warp_area_warpedimg(cv::Mat & frame_in){
 }
 
 
+cv::Mat ImgProcessing::mask_frame(cv::Mat & frame, cv::Mat & mask){
+    // Mask out frame from mask
+    cv::Mat frame_out;
+    frame.copyTo(frame_out, mask);
+    return std::move(frame_out);
+}
+
+
 
 cv::Mat ImgProcessing::threshold_between(cv::Mat & frame, int thresh_min, int threshold_max){
     cv::Mat m1, m2;
@@ -132,7 +140,7 @@ cv::Mat ImgProcessing::abs_sobel_thresh(cv::Mat frame, orientation dir,
 }
 
 
-cv::Mat ImgProcessing::mask_lane(cv::Mat & frame_in_RGB){
+cv::Mat ImgProcessing::get_lane_limits_mask(cv::Mat & frame_in_RGB){
     /*  Take RGB image, perform necessary color transformation /gradient calculations
         and output the detected lane pixels mask, alongside an RGB composition of the 3 sub-masks (added)
         for visualization */
@@ -180,241 +188,199 @@ cv::Mat ImgProcessing::mask_lane(cv::Mat & frame_in_RGB){
     cv::threshold(HLS_chs[2], shadow_mask, 50, 1, cv::THRESH_BINARY);    // GT X  ==> mask = 1 
     cv::bitwise_and(mask, shadow_mask, mask); // replace m1 with m1 && m2 (note nonzero is true in this case) 
 
-    // Output frame
-    cv::Mat frame_out;
-    frame_in_RGB.copyTo(frame_out, mask);  
-    return frame_out;    
+    return mask; 
 }
 
-cv::Mat ImgProcessing::fit_xy_from_mask(cv::Mat & frame_in, int n_windoes=9, int margin = 100, int minpix = 50){
+std::vector<ImgProcessing::LaneLine> ImgProcessing::fit_xy_from_mask(cv::Mat & mask, cv::Mat & frame,
+                                     int n_windows, int margin, size_t minpix, bool annotate){
     /* Take the input mask and perform a sliding window search
      Return the coordinates of the located pixels, polynomial coefficients and optionally an image showing the
        windows/detections
      **Parameters/Keywords:
-     nwindows ==> Choose the number of sliding windows
+     n_windows ==> Choose the number of sliding windows
      margin ==> Set the width of the windows +/- margin
      minpix ==> Set minimum number of pixels found to recenter window*/
 
 
-}
-
-
     // treatment of mask to get more reliable region
-    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));
-    cv::morphologyEx(frame_in, frame_in, cv::MORPH_OPEN, kernel); ;
+    // cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));    
+    // cv::morphologyEx(mask, mask, cv::MORPH_OPEN, kernel); 
 
+    /*
     // perform watershed detection (labels connected components with unique number
     cv::Mat labels;
-    int n_labels = cv::connectedComponents(frame_in, labels, CV_16U);
-    /*  get indices which belong to each of the reliable clusters (will not be split by the margin)
-        bins_map [j-1] contains lin/col = yx = [0,1] indices of connected region j ([2, Npts])
-        take indices of nonzero (defined in line 267 below) so that the indices refer to the same mask */
+    int n_labels = cv::connectedComponents(mask, labels, CV_16U);
+    //  get indices which belong to each of the reliable clusters (will not be split by the margin)
+    //  bins_map [j-1] contains lin/col = yx = [0,1] indices of connected region j ([2, Npts])
+    //  take indices of nonzero (defined in line 267 below) so that the indices refer to the same mask
     std::vector<std::vector<cv::Point>> region_idx_map;
-    CV_16U px;
     for(int i = 0; i < n_labels; ++i)        
         region_idx_map.emplace_back(std::vector<int>());
     // https://stackoverflow.com/questions/25221421/c-opencv-fast-pixel-iteration/25224916
     for (int i = 0; i < labels.rows; ++i){
-        cv::Vec3b* pixel = labels.ptr<cv::Vec3b>(i); // pointer to first pixel in row
-        for (int j = 0; j < img.cols; ++j) {
-            px = pixel[j][0]; // values (0 - n_labels-1)
-            if (px > 0)
+        uchar* pixel = labels.ptr<uchar>(i); // pointer to first pixel in row
+        for (int j = 0; j < labels.cols; ++j) {
+            if (pixel[j] > 0)  // values [0, n_labels-1]
                 region_idx_map[px-1].emplace_back(cv::Point(i, j));
         }
+    }*/
+
+    // Take a "histogram" (x-profile) of the bottom of the image
+    int Ny = mask.rows;
+    int Nx = mask.cols;  
+    std::cout << "Nx, Ny = " << Nx <<"," << Ny << "\n";
+    std::vector<float> histogram(Nx); // inits to zero
+    for (int i = Ny - 3 * Ny / n_windows; i < Ny; ++i){
+        uchar* pixel = mask.ptr<uchar>(i); // pointer to first pixel in row
+        for (int j = 0; j < Nx; ++j) {            
+            histogram[j] += static_cast<float>(pixel[j]);
+        }
+    }    
+
+    // Find the peak of the left and right halves of the histogram
+    // These will be the starting point for the left and right lines
+    // Consider a margin to avoid locating lanes too close to border    
+    int midpoint = Nx/2, leftx_base, rightx_base;
+    std::vector<float>::iterator it; 
+    it  = std::max_element(histogram.begin()+Nx/10, histogram.begin()+midpoint);
+    leftx_base = std::distance(histogram.begin(), it);
+    std::cout << "start x: " << leftx_base << "("<< *it <<")";
+    it = std::max_element(histogram.begin()+midpoint, histogram.end()-Nx/10); 
+    rightx_base = std::distance(histogram.begin(), it);
+    std::cout << ", "  << rightx_base << "("<< *it <<")\n";
+
+    //Set height of windows - based on n_windows above and image shape
+    int window_height = Ny / n_windows;
+    // Identify the x and y positions of all nonzero pixels in the image
+    std::vector<cv::Point> nonzero;
+    for (int i = 0; i < Ny; ++i){
+        uchar* pixel = mask.ptr<uchar>(i); // pointer to first pixel in row
+        for (int j = 0; j < Nx; ++j) {
+            if ( pixel[j] > 0) { 
+                nonzero.emplace_back(cv::Point(j, i));
+            }
+        }
     }
-        std::vector
-    region_idx_map = [(labels == j).nonzero() for j in range(1, np.max(labels) + 1)]
 
-    # Take a "histogram" (x-profile) of the bottom half of the image
-    histogram = np.sum(mask_input[mask_input.shape[0] // 2:, :], axis=0)
-    # Find the peak of the left and right halves of the histogram
-    # These will be the starting point for the left and right lines
-    # Consider a margin to avoid locating lanes too close to border
-    Ny, Nx = mask_input.shape[0:2]
-    midpoint = np.int(Nx // 2)
-    leftx_base = np.argmax(histogram[Nx // 10:midpoint]) + Nx // 10
-    rightx_base = np.argmax(histogram[midpoint:Nx - Nx // 10]) + midpoint
+    // Current positions to be updated later for each window in n_windows
+    int leftx_current, rightx_current;
+    leftx_current = leftx_base;
+    rightx_current = rightx_base;
 
-    # Set height of windows - based on nwindows above and image shape
-    window_height = np.int(Ny // nwindows)
-    # Identify the x and y positions of all nonzero pixels in the image
-    nonzero = mask_input.nonzero()
-    nonzeroy = np.array(nonzero[0])
-    nonzerox = np.array(nonzero[1])
-    # Current positions to be updated later for each window in nwindows
-    leftx_current = leftx_base
-    rightx_current = rightx_base
+    // Create empty lists to receive left and right lane pixel indices/coordinates (first is x)
+    //inds ==> refer to the image, not nonzero!
+    std::vector<cv::Point> left_lane_pts, right_lane_pts;
 
-    # Create empty lists to receive left and right lane pixel indices/coordinates (first is x)
-    # inds ==> refer to the image, not nonzero!
-    left_lane_inds  = [[], []]
-    right_lane_inds = [[], []]
+    // keep track of the minimum y of the reliable (label-based) regions
+    /*int ymin_good_left = Ny;
+    int ymin_good_right = Ny; */
 
-    # Create an output image to draw on and visualize the result
-    if NO_IMG == False:
-        out_img = np.dstack((mask_input, mask_input, mask_input))
-    else:
-        out_img = None  # no image returned
+    std::cout << "#####################################################\n";
 
-    # keep track of the minimumy of the reliable (label-based regions)
-    ymin_good_left = np.nan
-    ymin_good_right = np.nan
+    // Step through the windows one by one
+    for (int win = 0; win < n_windows; ++win){
 
-    # Step through the windows one by one
-    for window in range(nwindows):
+        // Identify window boundaries in x and y (and right and left)
+        int win_y_low = Ny - (win + 1) * window_height;
+        int win_y_high = Ny - win * window_height;
+        // Find the four boundaries of the window #win
+        int win_xleft_low   = leftx_current - margin;
+        int win_xleft_high  = leftx_current + margin;
+        int win_xright_low  = rightx_current - margin;
+        int win_xright_high = rightx_current + margin;
 
-        # Identify window boundaries in x and y (and right and left)
-        win_y_low = Ny - (window + 1) * window_height
-        win_y_high = Ny - window * window_height
-        # Find the four boundaries of the window #
-        win_xleft_low = leftx_current - margin
-        win_xleft_high = leftx_current + margin
-        win_xright_low = rightx_current - margin
-        win_xright_high = rightx_current + margin
+        std::cout << "win #" << win << "  y = [" << win_y_low << ", " << win_y_high << "]\n"
+                  << "  x = [" << win_xleft_low << ", " << win_xleft_high << "] [" << win_xright_low << ", " << win_xright_high <<"]\n";
 
-        # Draw the windows on the visualization image
-        if NO_IMG == False:
-            cv2.rectangle(out_img, (win_xleft_low, win_y_low),
-                          (win_xleft_high, win_y_high), (0, 255, 0), 2)
-            cv2.rectangle(out_img, (win_xright_low, win_y_low),
-                          (win_xright_high, win_y_high), (0, 255, 0), 2)
+        // Identify the nonzero pixels in x and y within the window #win
+        // take indices of the non-zero selection!
+        auto within_left  = [win_xleft_low, win_xleft_high, win_y_low, win_y_high](cv::Point p){            
+            return (p.x >= win_xleft_low) && (p.x <= win_xleft_high) && 
+                   (p.y <= win_y_low)     && (p.y <= win_y_high) ;
+        };
+        auto within_right = [win_xright_low, win_xright_high, win_y_low, win_y_high](cv::Point p){
+            return (p.x >= win_xright_low) && (p.x <= win_xright_high) && 
+                   (p.y <= win_y_low)      && (p.y <= win_y_high) ;
+        };
 
-        # Identify the nonzero pixels in x and y within the window #
-        # take indices of the non-zero selection!
-        good_left_inds = np.where((nonzerox >= win_xleft_low) & (nonzerox <= win_xleft_high) &
-                                  (nonzeroy >= win_y_low) & (nonzeroy <= win_y_high))[0]
-        good_right_inds = np.where((nonzerox >= win_xright_low) & (nonzerox <= win_xright_high) &
-                                   (nonzeroy >= win_y_low) & (nonzeroy <= win_y_high))[0]
+        // Append these coordinates to the lists: go though points only once
+        for(auto p: nonzero){
+            if(within_left(p)) 
+                left_lane_pts.emplace_back(p);
+            if(within_right(p)) 
+                right_lane_pts.emplace_back(p);
+        }
 
-        # Append these coordinates to the lists
-        # left lane
-        left_lane_inds[0].append(nonzerox[good_left_inds])
-        left_lane_inds[1].append(nonzeroy[good_left_inds])
-        # right lane
-        right_lane_inds[0].append(nonzerox[good_right_inds])
-        right_lane_inds[1].append(nonzeroy[good_right_inds])
+        // annotation to illustrate parameters
+        if (annotate){
+            cv::rectangle(frame, cv::Point(win_xleft_low, win_y_low), cv::Point(win_xleft_high, win_y_high), cv::Scalar(255,0,0));
+            cv::rectangle(frame, cv::Point(win_xright_low, win_y_low), cv::Point(win_xright_high, win_y_high), cv::Scalar(255,255,0));
+        }
+        
+        // Update window's x center
+        // left window
+        // perform a fit to predict the window tendency, if a minimum number of points is present and the y span allows
+        /*const auto [imin, imax] = std::minmax_element(left_lane_pts.begin(), left_lane_pts.end(), 
+                                  [](const cv::Point & p1, const cv::Point & p2){ return p1.x > p2.x; }
+                                  );
+        if (left_lane_pts.size() > minpix  && ((*imax).y-(*imin).y) > static_cast<int>(minpix) ){*/
+        if (left_lane_pts.size() > minpix ){
+            // make partial fit of order 1 or 2 and predict position at next window
+            if(win < 3){
+                std::vector<double>cfs = FitLine(left_lane_pts, true); // fit x = f(y)
+                int y = 0.5 * (win_y_low + win_y_high)-window_height;
+                leftx_current = cfs[0] + cfs[1]*y;
+            } else {
+                std::vector<double>cfs = FitParabola(left_lane_pts, true); // fit x = f(y)
+                int y = 0.5 * (win_y_low + win_y_high)-window_height;
+                leftx_current = cfs[0] + cfs[1]*y + cfs[2]*y*y;
+            }
+        }
 
-        # check the connected regions inside the selection
-        # if points are found, add the whole region to the selection of good indices
-        # kept a separate list as this refers to the image indices (and not nonzero, as the labeling
-        # requires the full image and not only the non zero points of the mask)
-        labels_in_left = np.unique(labels[nonzeroy[good_left_inds], nonzerox[good_left_inds]])
-        labels_in_left = labels_in_left[labels_in_left > 0]  # 0 = background
-        if np.size(labels_in_left) > 0:
-            for k in labels_in_left:
-                # y indices of the whole region ==> get portion of region within y-window
-                # value of label k maps to index k-1!
-                yreg_left, xreg_left = region_idx_map[k - 1][0], region_idx_map[k - 1][1]
-                reg_good_idx = np.where((yreg_left >= win_y_low) & (yreg_left <= win_y_high))[0]
-                # store x and y coordinates in the appropriate lists
-                left_lane_inds[0].append(xreg_left[reg_good_idx])
-                left_lane_inds[1].append(yreg_left[reg_good_idx])
-                # keep track of minimum value
-                ymin_good_left = np.nanmin(np.concatenate(([ymin_good_left], yreg_left[reg_good_idx])))
-
-        # same for right
-        labels_in_right = np.unique(labels[nonzeroy[good_right_inds], nonzerox[good_right_inds]])
-        labels_in_right = labels_in_right[labels_in_right > 0]  # 0 = background
-        if np.size(labels_in_right) > 0:
-            for k in labels_in_right:
-                # y indices of the whole region ==> get portion of region within y-window
-                # value of label k maps to index k-1!
-                yreg_right, xreg_right = region_idx_map[k - 1][0], region_idx_map[k - 1][1]
-                reg_good_idx = np.where((yreg_right >= win_y_low) & (yreg_right <= win_y_high))[0]
-                # store x and y coordinates in the appropriate lists
-                right_lane_inds[0].append(xreg_right[reg_good_idx])
-                right_lane_inds[1].append(yreg_right[reg_good_idx])
-                # keep track of minimum value
-                ymin_good_right = np.nanmin(np.concatenate(([ymin_good_right], yreg_right[reg_good_idx])))
+        // right window
+        // perform a fit to predict the window tendency, if a minimum number of points is present and the y span allows
+        const auto [imin2, imax2] = std::minmax_element(right_lane_pts.begin(), right_lane_pts.end(), 
+                                    [](const cv::Point & p1, const cv::Point & p2){ return p1.x > p2.x; }
+                                    );
+        if (right_lane_pts.size() > minpix  && ((*imax2).y-(*imin2).y) > static_cast<int>(minpix) ){
+            // make partial fit of order 1 or 2 and predict position at next window
+            if(win < 3){
+                std::vector<double>cfs = FitLine(right_lane_pts, true); // fit x = f(y)
+                int y = 0.5 * (win_y_low + win_y_high)-window_height;
+                rightx_current = static_cast<int>(cfs[0] + cfs[1]*y);
+            } else {
+                std::vector<double>cfs = FitParabola(right_lane_pts, true); // fit x = f(y)
+                int y = 0.5 * (win_y_low + win_y_high)-window_height;
+                rightx_current = static_cast<int>(cfs[0] + cfs[1]*y + cfs[2]*y*y);
+            }
+        }
+    } // for each window
 
 
-        # Update window's x center
-        # left window
-        # perform a fit to predict the window tendency, if a minimum number of points is present and the y span allows
-        if (np.size(np.concatenate(left_lane_inds[1])) >= minpix) and \
-                (np.max(np.concatenate(left_lane_inds[1]))- np.min(np.concatenate(left_lane_inds[1]))) > minpix:
-            # make partial fit of order 1 or 2
-            order = 1*(window<3) + 2*(window>=3)
-            polycf_left = np.polyfit(np.concatenate(left_lane_inds[1]),
-                                     np.concatenate(left_lane_inds[0]), order)
-            # predict position at next window
-            leftx_current = np.int(np.round(np.polyval(polycf_left, 0.5 * (win_y_low + win_y_high)-window_height)))
+    // Fit a second order polynomial to each lane, assuming x = f(y) #
+    // for info on residuals ==> https: // stackoverflow.com / questions / 5477359 / chi - square - numpy - polyfit - numpy
+    std::vector<double>polycf_left = FitParabola(left_lane_pts, true); // fit x = f(y)
+    double sqr_error_left = chi_squared(polycf_left, left_lane_pts, true);
+    double MSE_left = std::sqrt(sqr_error_left / left_lane_pts.size());
 
-        # right window
-        # perform a fit to predict the window tendency, if a minimum number of points is present and the y span allows
-        if (np.size(np.concatenate(right_lane_inds[1])) >= minpix) and \
-                (np.max(np.concatenate(right_lane_inds[1]))- np.min(np.concatenate(right_lane_inds[1]))) > minpix:
-            # make partial fit of order 1 or 2
-            order = 1*(window < 3) + 2*(window>=3)
-            polycf_right = np.polyfit(np.concatenate(right_lane_inds[1]),
-                                      np.concatenate(right_lane_inds[0]), order)
-            # predict position at next window
-            rightx_current = np.int(np.round(np.polyval(polycf_right, 0.5 * (win_y_low + win_y_high) - window_height)))
+    std::vector<double>polycf_right = FitParabola(right_lane_pts, true); // fit x = f(y)
+    double sqr_error_right = chi_squared(polycf_right, right_lane_pts, true);
+    double MSE_right = std::sqrt(sqr_error_right / right_lane_pts.size());
 
-        # keep this plot ==> cool to explain procedure!
-        PLOT_METHOD = False
-        if PLOT_METHOD and (window == 4):
-            stop()
-            plt.figure(num=1)
-            plt.clf()
-            plt.imshow(out_img)
-            y = np.arange(win_y_low-window_height, win_y_high)
-            plt.plot(np.polyval(polycf_left, y), y, 'r--')
-            plt.plot(np.repeat(leftx_current, 2), np.repeat(0.5 * (win_y_low + win_y_high) - window_height,2), 'b+')
-            plt.plot(np.polyval(polycf_right, y), y, 'r--')
-            plt.plot(np.repeat(rightx_current, 2), np.repeat(0.5 * (win_y_low + win_y_high) - window_height,2), 'b+')
-            plt.pause(20)
-            stop()
-
-
-    # for each window
-
-    # Concatenate the arrays of indices (previously was a list of lists of pixels)
-    # Extract left and right line pixel positions
-    # all indices refer to the whole mask!
-    leftx = np.concatenate(left_lane_inds[0])
-    lefty = np.concatenate(left_lane_inds[1])
-    rightx = np.concatenate(right_lane_inds[0])
-    righty = np.concatenate(right_lane_inds[1])
-
-    # Fit a second order polynomial to each using `np.polyfit`, assuming x = f(y) #
-    # for info on residuals ==> https: // stackoverflow.com / questions / 5477359 / chi - square - numpy - polyfit - numpy
-    # use weights based on y, so the bottom pixels are weighted more
-    polycf_left, sqr_error_left, _, _, _ = np.polyfit(lefty, leftx, 2, full = True, w=lefty / Ny)
-    MSE_left = np.sqrt(sqr_error_left[0] / np.size(lefty))
-
-    polycf_right, sqr_error_right, _, _, _ = np.polyfit(righty, rightx, 2, full = True, w=righty / Ny)
-    MSE_right = np.sqrt(sqr_error_right[0] / np.size(righty))
-
-    # Lane annotation (to be warped and shown in pipeline)
+    
+    /*# Lane annotation (to be warped and shown in pipeline)
     lane_annotation = np.zeros([Ny, Nx, 3], dtype=np.uint8)
     lane_annotation[lefty, leftx] = [255, 0, 0]
-    lane_annotation[righty, rightx] = [0, 0, 255]
+    lane_annotation[righty, rightx] = [0, 0, 255]*/
 
-    # Optional Visualization Steps
-    if NO_IMG == False:
-        # Set colors in the left and right lane regions
-        out_img[lefty, leftx] = [255, 0, 0]
-        out_img[righty, rightx] = [0, 0, 255]
 
-        # Generate x and y values for plotting
-        ploty = np.linspace(0, Ny - 1, Ny)
+    // wrap data into LaneLines structs
+    ImgProcessing::LaneLine leftlane  = LaneLine{std::move(left_lane_pts),  std::move(polycf_left),  MSE_left};
+    ImgProcessing::LaneLine rightlane = LaneLine{std::move(right_lane_pts), std::move(polycf_right), MSE_right};
+    std::vector<LaneLine> out_lanes {leftlane, rightlane};
+    return std::move(out_lanes);
 
-        left_fitx = np.polyval(polycf_left, ploty)
-        right_fitx = np.polyval(polycf_right, ploty)
-
-        # Plots the left and right polynomials on the lane lines (only works in non-interactive backend!)
-        # otherwise ends up in currently open figure
-        if plt.get_backend() == 'Agg':
-            plt.plot(left_fitx, ploty, color='yellow')
-            plt.plot(right_fitx, ploty, color='yellow')
-    # Optional Visualization Steps
-
-    # wrap data into LaneLines objects
-    leftlane = LaneLine(leftx, lefty, polycf_left, MSE_left, ymin_good_left)
-    rightlane = LaneLine(rightx, righty, polycf_right, MSE_right, ymin_good_right)
-
-    return leftlane, rightlane, lane_annotation, out_img
+}
 
 /*
 # functions to process the mask by finding lane pixels and fitting

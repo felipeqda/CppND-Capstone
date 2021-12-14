@@ -2,6 +2,7 @@
 #include "keyboard_interface.h"
 #include "calibration.h"
 #include "img_processing.h"
+#include "math.h"
 #include "annotate.h"
 
 // constructor
@@ -93,7 +94,7 @@ bool VideoPipeline::quit_loop(bool verbose=false){
 
 // main pipeline image processing 
 cv::Mat VideoPipeline::apply_processing(cv::Mat frame_in){
-	cv::Mat frame_out;  // pass by value ==> copy
+	cv::Mat frame_out, mask;  // pass by value ==> copy
     
   	// I) Calibration: Undistort image based on calibration parameters
     if(!cal_available){      
@@ -105,8 +106,19 @@ cv::Mat VideoPipeline::apply_processing(cv::Mat frame_in){
     // II) Warp image to bird's eye view
     frame_out = topdown_transform.warp(frame_out);
 
-    // III) color transformations and gradients
-    frame_out = ImgProcessing::mask_lane(frame_out);
+    // III) apply color transformations and gradients to mask lane markings
+    mask = ImgProcessing::get_lane_limits_mask(frame_out);
+
+    // Mask out output frame (visualization)
+    frame_out = ImgProcessing::mask_frame(frame_out, mask);
+
+
+    // IV) get fit from mask
+    std::vector<ImgProcessing::LaneLine> lanes = ImgProcessing::fit_xy_from_mask(mask, frame_out);
+    for (auto lane: lanes){
+        std::vector<cv::Point> line = EvalFit<cv::Point>(lane.poly_cfs, lane.pts, true);
+        cv::polylines(frame_out, line, false, cv::Scalar(255,0,0), 2);
+    }
 
     // N) add side frame    
     // frame_out = annotate::add_side_panel(frame_out);
