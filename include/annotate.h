@@ -6,8 +6,11 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
 
+#include "img_processing.h"
+
 namespace annotate{
     cv::Mat add_side_panel(cv::Mat & frame_in);
+    void annotate_lanes(std::vector<ImgProcessing::LaneLine> lanes, cv::Mat & frame, cv::Scalar color = cv::Scalar(255,255,128));
 };
 
 #endif

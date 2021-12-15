@@ -1,4 +1,5 @@
 #include "annotate.h"
+#include "math.h"
 
 cv::Mat annotate::add_side_panel(cv::Mat & frame_in){
     cv::Mat car = cv::imread("../data/car_top.png");
@@ -22,3 +23,14 @@ cv::Mat annotate::add_side_panel(cv::Mat & frame_in){
 
     return frame_out;
 }    
+
+
+void annotate::annotate_lanes(std::vector<ImgProcessing::LaneLine> lanes, cv::Mat & frame, cv::Scalar color){
+    for(auto lane : lanes){
+        // form polylines and plot
+        std::vector<cv::Point> y{cv::Point(0,lane.y_min), cv::Point(0,(lane.y_min+lane.y_max)/2),
+                                 cv::Point(0,lane.y_max)};
+        std::vector<cv::Point> line = EvalFit<cv::Point>(lane.poly_cfs, y, true);  // only pts.y is used
+        cv::polylines(frame, line, false, color, 2);
+    }
+}

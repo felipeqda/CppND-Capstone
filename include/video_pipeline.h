@@ -32,10 +32,12 @@ class VideoPipeline{
         std::string window_name;
         int n_written_frames;
 
+        // tools
         bool cal_available{false};
         calParams cal;  // struct with cv::Mats needed for calibration
-
         Warp2TopDown topdown_transform;
+        Lane local_lane_fit;
+        Road road_fit;
 
     public:
         //constructor

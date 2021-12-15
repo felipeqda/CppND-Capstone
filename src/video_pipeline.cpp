@@ -32,7 +32,9 @@ VideoPipeline::VideoPipeline(std::string input_file,
 
     // Prepare transform object
     topdown_transform = Warp2TopDown(frame_reduction);
-
+    // Lane fitting tool
+    local_lane_fit = Lane();
+    road_fit = Road(20); // set size of buffer
 }
 
 // open video for reading, return success flag
@@ -47,6 +49,7 @@ bool VideoPipeline::read_video(std::string path){
                                 static_cast<int>(input_video.get(cv::CAP_PROP_FRAME_HEIGHT)));
     n_frames = static_cast<int>(input_video.get(cv::CAP_PROP_FRAME_COUNT));
     idx_frame = -1;          // Counter for read frames
+
     return true;
 }
 
@@ -109,17 +112,23 @@ cv::Mat VideoPipeline::apply_processing(cv::Mat frame_in){
     // III) apply color transformations and gradients to mask lane markings
     mask = ImgProcessing::get_lane_limits_mask(frame_out);
 
-    // Mask out output frame (visualization)
+    // Mask out output frame (for visualization)
     frame_out = ImgProcessing::mask_frame(frame_out, mask);
 
 
     // IV) get fit from mask
     std::vector<ImgProcessing::LaneLine> lanes = ImgProcessing::fit_xy_from_mask(mask, frame_out);
-    for (auto lane: lanes){
-        std::vector<cv::Point> line = EvalFit<cv::Point>(lane.poly_cfs, lane.pts, true);
-        cv::polylines(frame_out, line, false, cv::Scalar(255,0,0), 2);
-    }
+    // show each lane
+    annotate::annotate_lanes(lanes, frame_out);
 
+    // aggregate left/right lines into lane info and make road stats
+    local_lane_fit.update_fit(lanes); 
+    road_fit.aggregate_frame_fit(local_lane_fit);
+
+    // show fit
+    std::vector<cv::Point> pline = local_lane_fit.getPolygon();
+    cv::fillPoly(frame_out, pline, cv::Scalar(0,255,0));
+    
     // N) add side frame    
     // frame_out = annotate::add_side_panel(frame_out);
   	return std::move(frame_out);

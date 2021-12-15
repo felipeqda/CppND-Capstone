@@ -147,9 +147,7 @@ cv::Mat ImgProcessing::get_lane_limits_mask(cv::Mat & frame_in_RGB){
 
     // get morphological kernel and apply pre-processing
     // https://stackoverflow.com/questions/15561863/fast-image-thresholding?rq=1
-    // TODO: test and remove if not useful
-    bool MORPH_ENHANCE = true;
-    if(MORPH_ENHANCE){
+    if (false){
         cv::Mat temp_img;
         cv::resize(frame_in_RGB, temp_img, cv::Size(), 0.5, 0.5, cv::INTER_AREA); 
         cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5));
@@ -188,6 +186,15 @@ cv::Mat ImgProcessing::get_lane_limits_mask(cv::Mat & frame_in_RGB){
     cv::threshold(HLS_chs[2], shadow_mask, 50, 1, cv::THRESH_BINARY);    // GT X  ==> mask = 1 
     cv::bitwise_and(mask, shadow_mask, mask); // replace m1 with m1 && m2 (note nonzero is true in this case) 
 
+    // 5) strange body mask (high S but low S and V)
+    cv::threshold(HLS_chs[0], shadow_mask, 50, 1, cv::THRESH_BINARY);    // GT X  ==> mask = 1 
+    cv::bitwise_and(mask, shadow_mask, mask); // replace m1 with m1 && m2 (note nonzero is true in this case) 
+    cv::threshold(HLS_chs[1], shadow_mask, 50, 1, cv::THRESH_BINARY);    // GT X  ==> mask = 1 
+    cv::bitwise_and(mask, shadow_mask, mask); // replace m1 with m1 && m2 (note nonzero is true in this case) 
+
+    // swap (test)
+    // frame_in_RGB = frame_HLS;
+
     return mask; 
 }
 
@@ -201,34 +208,9 @@ std::vector<ImgProcessing::LaneLine> ImgProcessing::fit_xy_from_mask(cv::Mat & m
      margin ==> Set the width of the windows +/- margin
      minpix ==> Set minimum number of pixels found to recenter window*/
 
-
-    // treatment of mask to get more reliable region
-    // cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));    
-    // cv::morphologyEx(mask, mask, cv::MORPH_OPEN, kernel); 
-
-    /*
-    // perform watershed detection (labels connected components with unique number
-    cv::Mat labels;
-    int n_labels = cv::connectedComponents(mask, labels, CV_16U);
-    //  get indices which belong to each of the reliable clusters (will not be split by the margin)
-    //  bins_map [j-1] contains lin/col = yx = [0,1] indices of connected region j ([2, Npts])
-    //  take indices of nonzero (defined in line 267 below) so that the indices refer to the same mask
-    std::vector<std::vector<cv::Point>> region_idx_map;
-    for(int i = 0; i < n_labels; ++i)        
-        region_idx_map.emplace_back(std::vector<int>());
-    // https://stackoverflow.com/questions/25221421/c-opencv-fast-pixel-iteration/25224916
-    for (int i = 0; i < labels.rows; ++i){
-        uchar* pixel = labels.ptr<uchar>(i); // pointer to first pixel in row
-        for (int j = 0; j < labels.cols; ++j) {
-            if (pixel[j] > 0)  // values [0, n_labels-1]
-                region_idx_map[px-1].emplace_back(cv::Point(i, j));
-        }
-    }*/
-
     // Take a "histogram" (x-profile) of the bottom of the image
     int Ny = mask.rows;
     int Nx = mask.cols;  
-    std::cout << "Nx, Ny = " << Nx <<"," << Ny << "\n";
     std::vector<float> histogram(Nx); // inits to zero
     for (int i = Ny - 3 * Ny / n_windows; i < Ny; ++i){
         uchar* pixel = mask.ptr<uchar>(i); // pointer to first pixel in row
@@ -244,10 +226,8 @@ std::vector<ImgProcessing::LaneLine> ImgProcessing::fit_xy_from_mask(cv::Mat & m
     std::vector<float>::iterator it; 
     it  = std::max_element(histogram.begin()+Nx/10, histogram.begin()+midpoint);
     leftx_base = std::distance(histogram.begin(), it);
-    std::cout << "start x: " << leftx_base << "("<< *it <<")";
     it = std::max_element(histogram.begin()+midpoint, histogram.end()-Nx/10); 
     rightx_base = std::distance(histogram.begin(), it);
-    std::cout << ", "  << rightx_base << "("<< *it <<")\n";
 
     //Set height of windows - based on n_windows above and image shape
     int window_height = Ny / n_windows;
@@ -268,14 +248,10 @@ std::vector<ImgProcessing::LaneLine> ImgProcessing::fit_xy_from_mask(cv::Mat & m
     rightx_current = rightx_base;
 
     // Create empty lists to receive left and right lane pixel indices/coordinates (first is x)
-    //inds ==> refer to the image, not nonzero!
     std::vector<cv::Point> left_lane_pts, right_lane_pts;
-
-    // keep track of the minimum y of the reliable (label-based) regions
-    /*int ymin_good_left = Ny;
-    int ymin_good_right = Ny; */
-
-    std::cout << "#####################################################\n";
+    // keep track of min and max y values of fit area
+    int ymax_l{0},  ymax_r{0};
+    int ymin_l{Ny}, ymin_r{Ny};
 
     // Step through the windows one by one
     for (int win = 0; win < n_windows; ++win){
@@ -289,26 +265,34 @@ std::vector<ImgProcessing::LaneLine> ImgProcessing::fit_xy_from_mask(cv::Mat & m
         int win_xright_low  = rightx_current - margin;
         int win_xright_high = rightx_current + margin;
 
-        std::cout << "win #" << win << "  y = [" << win_y_low << ", " << win_y_high << "]\n"
-                  << "  x = [" << win_xleft_low << ", " << win_xleft_high << "] [" << win_xright_low << ", " << win_xright_high <<"]\n";
-
         // Identify the nonzero pixels in x and y within the window #win
-        // take indices of the non-zero selection!
+        // take coordinates of the non-zero selection
         auto within_left  = [win_xleft_low, win_xleft_high, win_y_low, win_y_high](cv::Point p){            
             return (p.x >= win_xleft_low) && (p.x <= win_xleft_high) && 
-                   (p.y <= win_y_low)     && (p.y <= win_y_high) ;
+                   (p.y >= win_y_low)     && (p.y <= win_y_high) ;
         };
         auto within_right = [win_xright_low, win_xright_high, win_y_low, win_y_high](cv::Point p){
             return (p.x >= win_xright_low) && (p.x <= win_xright_high) && 
-                   (p.y <= win_y_low)      && (p.y <= win_y_high) ;
+                   (p.y >= win_y_low)      && (p.y <= win_y_high) ;
         };
 
         // Append these coordinates to the lists: go though points only once
+        // keep track of minimum and maximum fit regions, and number of added points
+        size_t npts_left{0}, npts_right{0};
         for(auto p: nonzero){
-            if(within_left(p)) 
+            if(within_left(p)){
                 left_lane_pts.emplace_back(p);
-            if(within_right(p)) 
+                ymax_l = p.y > ymax_l ? p.y : ymax_l;
+                ymin_l = p.y < ymin_l ? p.y : ymin_l;
+                ++npts_left;
+            }                 
+            if(within_right(p)){
                 right_lane_pts.emplace_back(p);
+                ymax_r = p.y > ymax_r ? p.y : ymax_r;
+                ymin_r = p.y < ymin_r ? p.y : ymin_r;
+                ++npts_right;
+            } 
+                
         }
 
         // annotation to illustrate parameters
@@ -319,40 +303,36 @@ std::vector<ImgProcessing::LaneLine> ImgProcessing::fit_xy_from_mask(cv::Mat & m
         
         // Update window's x center
         // left window
-        // perform a fit to predict the window tendency, if a minimum number of points is present and the y span allows
-        /*const auto [imin, imax] = std::minmax_element(left_lane_pts.begin(), left_lane_pts.end(), 
-                                  [](const cv::Point & p1, const cv::Point & p2){ return p1.x > p2.x; }
-                                  );
-        if (left_lane_pts.size() > minpix  && ((*imax).y-(*imin).y) > static_cast<int>(minpix) ){*/
-        if (left_lane_pts.size() > minpix ){
-            // make partial fit of order 1 or 2 and predict position at next window
-            if(win < 3){
-                std::vector<double>cfs = FitLine(left_lane_pts, true); // fit x = f(y)
-                int y = 0.5 * (win_y_low + win_y_high)-window_height;
-                leftx_current = cfs[0] + cfs[1]*y;
-            } else {
-                std::vector<double>cfs = FitParabola(left_lane_pts, true); // fit x = f(y)
-                int y = 0.5 * (win_y_low + win_y_high)-window_height;
-                leftx_current = cfs[0] + cfs[1]*y + cfs[2]*y*y;
-            }
+        // make partial fit of order 1 or 2 and predict position at next window
+        if (npts_left > 2*minpix){
+            std::vector<double> cfs = FitParabola(left_lane_pts, true); // fit x = f(y)
+            if (cfs.empty()) continue; // empty vector means fit failed
+            int y = (win_y_low + win_y_high)/2-window_height;
+            int x_pred = static_cast<int>(cfs[0] + cfs[1]*y + cfs[2]*y*y);
+            if (x_pred < rightx_current) leftx_current = x_pred; //sanity check: avoid overlap of windows
+        } else if (npts_left > minpix) {
+            std::vector<double> cfs = FitLine(left_lane_pts, true); // fit x = f(y)
+            if (cfs.empty()) continue; // empty vector means fit failed
+            int y = (win_y_low + win_y_high)/2-window_height;
+            int x_pred = static_cast<int>(cfs[0] + cfs[1]*y);
+            if (x_pred < rightx_current) leftx_current = x_pred; //sanity check: avoid overlap of windows
         }
 
         // right window
-        // perform a fit to predict the window tendency, if a minimum number of points is present and the y span allows
-        const auto [imin2, imax2] = std::minmax_element(right_lane_pts.begin(), right_lane_pts.end(), 
-                                    [](const cv::Point & p1, const cv::Point & p2){ return p1.x > p2.x; }
-                                    );
-        if (right_lane_pts.size() > minpix  && ((*imax2).y-(*imin2).y) > static_cast<int>(minpix) ){
-            // make partial fit of order 1 or 2 and predict position at next window
-            if(win < 3){
-                std::vector<double>cfs = FitLine(right_lane_pts, true); // fit x = f(y)
-                int y = 0.5 * (win_y_low + win_y_high)-window_height;
-                rightx_current = static_cast<int>(cfs[0] + cfs[1]*y);
-            } else {
-                std::vector<double>cfs = FitParabola(right_lane_pts, true); // fit x = f(y)
-                int y = 0.5 * (win_y_low + win_y_high)-window_height;
-                rightx_current = static_cast<int>(cfs[0] + cfs[1]*y + cfs[2]*y*y);
-            }
+        // perform a fit to predict the window tendency, if a minimum number of points is present 
+        // make partial fit of order 1 or 2 and predict position at next window
+        if (npts_right > 2*minpix){            
+            std::vector<double> cfs = FitParabola(right_lane_pts, true); // fit x = f(y)
+            if (cfs.empty()) continue; // empty vector means fit failed
+            int y = (win_y_low + win_y_high)/2-window_height;
+            int x_pred = static_cast<int>(cfs[0] + cfs[1]*y + cfs[2]*y*y);
+            if (x_pred > leftx_current) rightx_current = x_pred; //sanity check: avoid overlap of windows
+        } else if (npts_right > minpix) {
+            std::vector<double> cfs = FitLine(right_lane_pts, true); // fit x = f(y)
+            if (cfs.empty()) continue; // empty vector means fit failed
+            int y = (win_y_low + win_y_high)/2-window_height;
+            int x_pred = cfs[0] + cfs[1]*y;
+            if (x_pred > leftx_current) rightx_current = x_pred; //sanity check: avoid overlap of windows        
         }
     } // for each window
 
@@ -375,50 +355,103 @@ std::vector<ImgProcessing::LaneLine> ImgProcessing::fit_xy_from_mask(cv::Mat & m
 
 
     // wrap data into LaneLines structs
-    ImgProcessing::LaneLine leftlane  = LaneLine{std::move(left_lane_pts),  std::move(polycf_left),  MSE_left};
-    ImgProcessing::LaneLine rightlane = LaneLine{std::move(right_lane_pts), std::move(polycf_right), MSE_right};
+    ImgProcessing::LaneLine leftlane  = LaneLine{std::move(left_lane_pts),  std::move(polycf_left),  MSE_left,  
+                                        Nx, Ny, ymin_l, ymax_l};
+    ImgProcessing::LaneLine rightlane = LaneLine{std::move(right_lane_pts), std::move(polycf_right), MSE_right,
+                                        Nx, Ny, ymin_r, ymax_r};
     std::vector<LaneLine> out_lanes {leftlane, rightlane};
     return std::move(out_lanes);
 
 }
 
-/*
-# functions to process the mask by finding lane pixels and fitting
-# (based on quizzes)
-# ---------------------------------------------------------------------
-class LaneLine:
-    """store the coordinates of the pixels and the polynomial coefficients for each lane
-     also store where the line reaches the bottom of the image """
 
-    def __init__(self, x_coord, y_coord, poly_coef, MSE, y_min_reliable):
-        self.Npix = np.size(x_coord) #size of fitted region
-        self.x_pix = x_coord
-        self.y_pix = y_coord
-        self.cf = poly_coef
-        if np.size(y_coord) > 0:
-            self.x_bottom = np.polyval(poly_coef, np.max(y_coord))
-        else:
-            self.x_bottom = None
-        # MSE of fit (compare "goodness of fit")
-        self.MSE = MSE
-        if np.isnan(y_min_reliable):
-            self.y_min_reliable = None #neutral indexing value
-        else:
-            self.y_min_reliable = np.int32(y_min_reliable)
-# ---------------------------------------------------------------------
-def weight_fit_cfs(left, right):
-    """ judge fit quality, providing weights and a weighted average of the coefficients
-        inputs are LaneLine objects """
-    cfs = np.vstack((left.cf, right.cf))
-    cf_MSE = np.vstack((left.MSE, right.MSE))
-    # average a/b coefficients with inverse-MSE weights
-    w1 = np.sum(cf_MSE) / cf_MSE
-    # consider number of points as well
-    w2 = np.reshape(np.array([left.Npix, right.Npix]) / (left.Npix + right.Npix), [2, 1])
-    # aggregate weights
-    w = w1 * w2
-    cf_avg = np.mean(w * cfs, axis=0) / np.mean(w, axis=0)
-    return w, cf_avg
-# ---------------------------------------------------------------------
+// implementation of lane coefficient fitting tool (across agreggate into lane parameters)
+constexpr int LEFT = 0, RIGHT = 1, MIN = 0, MAX = 0;
 
-*/
+void Lane::update_fit(std::vector<ImgProcessing::LaneLine> lane_fit_from_frame){
+    a_[LEFT]  = lane_fit_from_frame[LEFT].poly_cfs[0];
+    a_[RIGHT] = lane_fit_from_frame[RIGHT].poly_cfs[0];
+
+    b_[LEFT]  = lane_fit_from_frame[LEFT].poly_cfs[1];
+    b_[RIGHT] = lane_fit_from_frame[RIGHT].poly_cfs[1];
+
+    c_[LEFT]  = lane_fit_from_frame[LEFT].poly_cfs[2]; 
+    c_[RIGHT] = lane_fit_from_frame[RIGHT].poly_cfs[2];
+
+    // score for weighted combination
+    w_[LEFT] = std::pow(lane_fit_from_frame[LEFT].pts.size()  * lane_fit_from_frame[LEFT].MSE *
+                       (lane_fit_from_frame[LEFT].y_max-lane_fit_from_frame[LEFT].y_min),2);
+    w_[RIGHT] = std::pow(lane_fit_from_frame[RIGHT].pts.size() * lane_fit_from_frame[RIGHT].MSE * 
+                        (lane_fit_from_frame[RIGHT].y_max-lane_fit_from_frame[RIGHT].y_min),2);
+
+    // update frame size and axis, if necessary
+    if (Nx_ != lane_fit_from_frame[LEFT].Nx || Ny_ !=  lane_fit_from_frame[LEFT].Ny){
+        Nx_ = lane_fit_from_frame[LEFT].Nx;
+        Ny_ = lane_fit_from_frame[LEFT].Ny;        
+    }
+
+    // update y range
+    y_left_[MIN] = lane_fit_from_frame[LEFT].y_min;
+    y_left_[MAX] = lane_fit_from_frame[LEFT].y_max;
+    y_right_[MIN] = lane_fit_from_frame[RIGHT].y_min;
+    y_right_[MAX] = lane_fit_from_frame[RIGHT].y_max;
+}
+
+std::vector<double> Lane::left_cfs(){
+    std::vector<double> out{a_[LEFT], b_[LEFT], c_[LEFT]};
+    return std::move(out);
+}
+
+std::vector<double> Lane::right_cfs(){
+    std::vector<double> out{a_[RIGHT], b_[RIGHT], c_[RIGHT]};
+    return std::move(out);
+}
+
+std::vector<double> Lane::center_cfs(){
+    int idx_best = w_[LEFT] > w_[RIGHT] ? LEFT : RIGHT;
+    std::vector<double> out{(a_[RIGHT]+a_[LEFT])/2, b_[idx_best], c_[idx_best]};
+    return std::move(out);
+}
+
+std::vector<double> Lane::best_left_cfs(){
+    int idx_best = w_[LEFT] > w_[RIGHT] ? LEFT : RIGHT;
+    std::vector<double> out{a_[LEFT], b_[idx_best], c_[idx_best]};
+    return std::move(out);
+}
+
+std::vector<double> Lane::best_right_cfs(){
+    int idx_best = w_[LEFT] > w_[RIGHT] ? LEFT : RIGHT;
+    std::vector<double> out{a_[RIGHT], b_[idx_best], c_[idx_best]};
+    return std::move(out);
+}
+
+// auxiliar
+void append_segment(std::vector<cv::Point> & line, const std::vector<cv::Point> & segment){
+    line.insert(std::end(line), std::begin(segment), std::end(segment));
+}
+
+// form polygon
+std::vector<cv::Point> Lane::getPolygon(){
+    // y axis up and down in steps
+    // logic: extrapolate only in reliable region
+    std::vector<cv::Point> yl1 {cv::Point(0,0), cv::Point(0,y_left_[MIN]/2), cv::Point(0,y_left_[MIN])};
+    std::vector<cv::Point> yl2 {cv::Point(0,y_left_[MIN]), cv::Point(0,(y_left_[MIN]+y_left_[MAX])/2), cv::Point(0,y_left_[MAX])};
+    std::vector<cv::Point> yl3 {cv::Point(0,y_left_[MAX]), cv::Point(0,(y_left_[MAX]+Ny_)/2), cv::Point(0,Ny_)};
+    
+    std::vector<cv::Point> yr1 {cv::Point(0,Ny_), cv::Point(0,(y_right_[MAX]+Ny_)/2), cv::Point(0,y_right_[MAX])};
+    std::vector<cv::Point> yr2 {cv::Point(0,y_right_[MAX]), cv::Point(0,(y_right_[MAX]+y_right_[MIN])/2), cv::Point(0,y_right_[MIN])};
+    std::vector<cv::Point> yr3 {cv::Point(0,y_right_[MIN]), cv::Point(0,y_right_[MIN]/2), cv::Point(0,0)};
+    
+    // polyline to plot
+    std::vector<cv::Point> line;
+    append_segment(line, EvalFit<cv::Point>(this->best_left_cfs(), yl1, true) );
+    append_segment(line, EvalFit<cv::Point>(this->left_cfs(), yl2, true) );
+    append_segment(line, EvalFit<cv::Point>(this->best_left_cfs(), yl3, true) );
+    append_segment(line, EvalFit<cv::Point>(this->best_right_cfs(), yr1, true) );
+    append_segment(line, EvalFit<cv::Point>(this->right_cfs(), yr2, true) );
+    append_segment(line, EvalFit<cv::Point>(this->best_right_cfs(), yr3, true) );
+    
+    
+    return std::move(line);
+}
+
