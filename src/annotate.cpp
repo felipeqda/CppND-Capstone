@@ -25,12 +25,24 @@ cv::Mat annotate::add_side_panel(cv::Mat & frame_in){
 }    
 
 
-void annotate::annotate_lanes(std::vector<ImgProcessing::LaneLine> lanes, cv::Mat & frame, cv::Scalar color){
+void annotate::annotate_lanes(std::vector<ImgProcessing::LaneLine> & lanes, cv::Mat & frame, cv::Scalar color){
     for(auto lane : lanes){
         // form polylines and plot
         std::vector<cv::Point> y{cv::Point(0,lane.y_min), cv::Point(0,(lane.y_min+lane.y_max)/2),
                                  cv::Point(0,lane.y_max)};
         std::vector<cv::Point> line = EvalFit<cv::Point>(lane.poly_cfs, y, true);  // only pts.y is used
+        cv::polylines(frame, line, false, color, 2);
+    }
+}
+
+void annotate::annotate_unwarpedlanes(std::vector<ImgProcessing::LaneLine> & lanes, Warp2TopDown & transform, 
+                                      cv::Mat & frame, cv::Scalar color){
+    for(auto lane : lanes){
+        // form polylines and plot
+        std::vector<cv::Point> y{cv::Point(0,lane.y_min), cv::Point(0,(lane.y_min+lane.y_max)/2),
+                                 cv::Point(0,lane.y_max)};
+        std::vector<cv::Point> line = EvalFit<cv::Point>(lane.poly_cfs, y, true);  // only pts.y is used
+        line = transform.unwarp_path(line);
         cv::polylines(frame, line, false, color, 2);
     }
 }

@@ -10,7 +10,8 @@
 
 namespace annotate{
     cv::Mat add_side_panel(cv::Mat & frame_in);
-    void annotate_lanes(std::vector<ImgProcessing::LaneLine> lanes, cv::Mat & frame, cv::Scalar color = cv::Scalar(255,255,128));
+    void annotate_lanes(std::vector<ImgProcessing::LaneLine> & lanes, cv::Mat & frame, cv::Scalar color = cv::Scalar(255,255,128));
+    void annotate_unwarpedlanes(std::vector<ImgProcessing::LaneLine> & lanes , Warp2TopDown & transform, cv::Mat & frame, cv::Scalar color = cv::Scalar(255,255,128));
 };
 
 #endif

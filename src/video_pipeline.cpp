@@ -97,7 +97,7 @@ bool VideoPipeline::quit_loop(bool verbose=false){
 
 // main pipeline image processing 
 cv::Mat VideoPipeline::apply_processing(cv::Mat frame_in){
-	cv::Mat frame_out, mask;  // pass by value ==> copy
+	cv::Mat frame_out, frame_warp, mask;  // pass by value ==> copy
     
   	// I) Calibration: Undistort image based on calibration parameters
     if(!cal_available){      
@@ -107,29 +107,40 @@ cv::Mat VideoPipeline::apply_processing(cv::Mat frame_in){
    	cv::undistort(std::move(frame_in), frame_out, cal.cam_matrix, cal.dist_coeff);
 
     // II) Warp image to bird's eye view
-    frame_out = topdown_transform.warp(frame_out);
+    frame_warp = topdown_transform.warp(frame_out);
 
     // III) apply color transformations and gradients to mask lane markings
-    mask = ImgProcessing::get_lane_limits_mask(frame_out);
+    mask = ImgProcessing::get_lane_limits_mask(frame_warp);
 
-    // Mask out output frame (for visualization)
-    frame_out = ImgProcessing::mask_frame(frame_out, mask);
+    // DEBUG: Mask out output frame (for visualization)
+    // frame_warp = ImgProcessing::mask_frame(frame_warp, mask);
 
 
     // IV) get fit from mask
-    std::vector<ImgProcessing::LaneLine> lanes = ImgProcessing::fit_xy_from_mask(mask, frame_out);
-    // show each lane
-    annotate::annotate_lanes(lanes, frame_out);
-
+    std::vector<ImgProcessing::LaneLine> lanes = ImgProcessing::fit_xy_from_mask(mask, frame_warp);
     // aggregate left/right lines into lane info and make road stats
     local_lane_fit.update_fit(lanes); 
-    road_fit.aggregate_frame_fit(local_lane_fit);
+    // road_fit.aggregate_frame_fit(local_lane_fit);
 
-    // show fit
-    std::vector<cv::Point> pline = local_lane_fit.getPolygon();
-    cv::fillPoly(frame_out, pline, cv::Scalar(0,255,0));
+
+    // V) Annotate
+    // show each lane
+    // annotate::annotate_lanes(lanes, frame_warp);
+    // show fitted area as overlay
+    std::vector<std::vector<cv::Point>> polygon = local_lane_fit.getPolygon();
+    cv::Mat overlay = cv::Mat(frame_out.size(), frame_out.type());
+    cv::fillPoly(overlay, polygon, cv::Scalar(0,255,0)); 
+    // annotate::annotate_lanes(lanes, overlay);
+
+    // DEBUG: show in warped mode
+    // cv::addWeighted(overlay, 0.1, frame_out, 1.0, 0.0, frame_out); // alpha overlay
     
-    // N) add side frame    
+    // VI) De-Warp annotated image
+    overlay = topdown_transform.unwarp(overlay);
+    cv::addWeighted(overlay, 0.1, frame_out, 1.0, 0.0, frame_out); // alpha overlay
+    annotate::annotate_unwarpedlanes(lanes, topdown_transform, frame_out);
+
+    // add side frame    
     // frame_out = annotate::add_side_panel(frame_out);
   	return std::move(frame_out);
 }

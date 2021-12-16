@@ -12,6 +12,7 @@
 #include "keyboard_interface.h"
 #include "calibration.h"
 #include "img_processing.h"
+#include "lane.h"
 
 class VideoPipeline{
     private:

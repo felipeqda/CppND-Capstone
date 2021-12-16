@@ -1,16 +1,10 @@
 #include "img_processing.h"
 #include "math.h"
 
-// auxiliary dot-product operation:
-// https://stackoverflow.com/questions/27981214/opencv-how-do-i-multiply-point-and-matrix-cvmat
-cv::Point2f operator*(cv::Mat M, const cv::Point2f& p){ 
-    cv::Mat_<double> src(3/*rows*/,1 /* cols */); 
-    src(0,0)=p.x; 
-    src(1,0)=p.y; 
-    src(2,0)=1.0; 
-    cv::Mat_<double> dst = M*src; //USE MATRIX ALGEBRA 
-    return cv::Point2f(dst(0,0),dst(1,0)); 
-} 
+// ---------------------------------
+// I) Warping Tools
+// ---------------------------------
+
 
 //cf. https://docs.opencv.org/3.4/de/dd4/samples_2cpp_2warpPerspective_demo_8cpp-example.html#a26
 // constructor
@@ -40,14 +34,16 @@ Warp2TopDown::Warp2TopDown(float reduction=1.0){
                                                {150*reduction, 0}, 
                                                {250*reduction, 0}, 
                                                {250*reduction, 720*reduction}};
-    std::vector<cv::Point2f> pts_ROI_;    
-    for(cv::Point2f pt_w : pts_warpedROI_){
-        pts_ROI_.emplace_back(this->M_inv_ * pt_w);
-    }
+    std::vector<cv::Point2f> pts_ROI_;   
+    cv::perspectiveTransform(pts_warpedROI_, pts_ROI_, this->M_inv_); 
 
-    // file_matrix = (cv::Mat_<int>(3, 3) << 1, 2, 3,
-    //                                   3, 4, 6,
-    //                                   7, 8, 9);     
+    /*std::vector<cv::Point2f> p_out;
+    cv::perspectiveTransform(pts_warp, p_out, this->M_inv_);
+    for(int i = 0; i<p_out.size(); ++i){
+        std::cout << "in = ("<< pts_warp[i].x <<", "<< pts_warp[i].x  << ") ";
+        std::cout << "out = ("<< p_out[i].x <<", "<< p_out[i].x  << ") ";
+        std::cout << "correct = ("<< pts_img[i].x <<", "<< pts_img[i].x  << ")\n";
+    }*/
 }    
 
 // warping tools
@@ -64,6 +60,34 @@ cv::Mat Warp2TopDown::unwarp(cv::Mat & frame_in){
     cv::warpPerspective(frame_in, unwarped_frame, this->M_inv_, frame_in.size());
     return unwarped_frame;    
 }
+
+std::vector<cv::Point> Warp2TopDown::warp_path(std::vector<cv::Point> path){
+    // convert to float coordinate
+    std::vector<cv::Point2f> p_in, p_out;
+    for(auto pt: path)
+        p_in.emplace_back(cv::Point2f(pt.x, pt.y));
+    // apply transformation
+    cv::perspectiveTransform(p_in, p_out, this->M_);
+    // convert back to int coordinate
+    std::vector<cv::Point> path_out;
+    for(auto pt: p_out)
+        path_out.emplace_back(cv::Point(static_cast<int>(pt.x), static_cast<int>(pt.y)));
+    return path_out;
+}
+std::vector<cv::Point> Warp2TopDown::unwarp_path(std::vector<cv::Point> path){
+    // convert to float coordinate
+    std::vector<cv::Point2f> p_in, p_out;
+    for(auto pt: path)
+        p_in.emplace_back(cv::Point2f(pt.x, pt.y));
+    // apply transformation
+    cv::perspectiveTransform(p_in, p_out, this->M_inv_);
+    // convert back to int coordinate
+    std::vector<cv::Point> path_out;
+    for(auto pt: p_out)
+        path_out.emplace_back(cv::Point(static_cast<int>(pt.x), static_cast<int>(pt.y)));
+    return path_out;
+}
+
 
 // getters
 std::vector<cv::Point2f> Warp2TopDown::xy_warpedROI(){
@@ -96,6 +120,9 @@ void Warp2TopDown::show_warp_area_warpedimg(cv::Mat & frame_in){
 }
 
 
+// ---------------------------------
+// II) ImgProcessing Namespace tools
+// ---------------------------------
 cv::Mat ImgProcessing::mask_frame(cv::Mat & frame, cv::Mat & mask){
     // Mask out frame from mask
     cv::Mat frame_out;
@@ -140,21 +167,20 @@ cv::Mat ImgProcessing::abs_sobel_thresh(cv::Mat frame, orientation dir,
 }
 
 
-cv::Mat ImgProcessing::get_lane_limits_mask(cv::Mat & frame_in_RGB){
+cv::Mat ImgProcessing::get_lane_limits_mask(cv::Mat frame_in_RGB){
     /*  Take RGB image, perform necessary color transformation /gradient calculations
         and output the detected lane pixels mask, alongside an RGB composition of the 3 sub-masks (added)
         for visualization */
 
     // get morphological kernel and apply pre-processing
     // https://stackoverflow.com/questions/15561863/fast-image-thresholding?rq=1
-    if (false){
-        cv::Mat temp_img;
-        cv::resize(frame_in_RGB, temp_img, cv::Size(), 0.5, 0.5, cv::INTER_AREA); 
-        cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5));
-        cv::morphologyEx(temp_img, temp_img, cv::MORPH_CLOSE, kernel); //, iterations=2);
-        cv::resize(temp_img, temp_img, cv::Size(), 2.0, 2.0, cv::INTER_AREA);  
-        frame_in_RGB = temp_img;
-    }
+    float factor = 4.0;  // reduction/expansion factor for image denoise
+    cv::Mat temp_img;
+    cv::resize(frame_in_RGB, temp_img, cv::Size(), 1.0/factor, 1.0/factor, cv::INTER_AREA); 
+    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5));
+    cv::morphologyEx(temp_img, temp_img, cv::MORPH_CLOSE, kernel); 
+    cv::resize(temp_img, temp_img, cv::Size(), factor, factor, cv::INTER_AREA);  
+    frame_in_RGB = temp_img;
 
     // convert to HLS color space
     cv::Mat frame_HLS;
@@ -164,36 +190,40 @@ cv::Mat ImgProcessing::get_lane_limits_mask(cv::Mat & frame_in_RGB){
     cv::split(frame_HLS, HLS_chs);
 
     // auxiliary masks
-    cv::Mat mask, grd_mask, shadow_mask;
+    cv::Mat mask, grd_mask, level_mask;
     
 
-    // 1) mask for high S value
+    // 1) mask for high S and L values
     // cf. https://docs.opencv.org/3.4/d7/d1b/group__imgproc__misc.html#gaa9e58d2860d4afa658ef70a9b1115576
     // void threshold( src_gray, dst, threshold_value, max_binary_value, threshold_type );
-    cv::threshold(HLS_chs[2], mask, 150, 1, cv::THRESH_BINARY);    // GT X  ==> mask = 1    
+    cv::threshold(HLS_chs[2],       mask, 150, 1, cv::THRESH_BINARY);    // GT X  ==> mask = 1 
+    cv::threshold(HLS_chs[1], level_mask, 150, 1, cv::THRESH_BINARY);    // GT X  ==> mask = 1
+    cv::bitwise_and(mask, level_mask, mask);
 
-    // 2) high S x-gradient
-    grd_mask = abs_sobel_thresh(HLS_chs[2], ImgProcessing::orientation::x, 20, 100);
+    // 2) high S and L x-gradients
+    grd_mask = abs_sobel_thresh(HLS_chs[2], ImgProcessing::orientation::x, 50, 150);
+    cv::bitwise_or(mask, grd_mask, mask);
+    grd_mask = abs_sobel_thresh(HLS_chs[1], ImgProcessing::orientation::x, 50, 150);
     cv::bitwise_or(mask, grd_mask, mask);
 
     // 3) high x-gradient of grayscale image 
     cv::Mat frame_gray;
     cv::cvtColor(frame_in_RGB, frame_gray, cv::COLOR_RGB2GRAY);
-    grd_mask = abs_sobel_thresh(frame_gray, ImgProcessing::orientation::x, 20, 100);
+    grd_mask = abs_sobel_thresh(frame_gray, ImgProcessing::orientation::x, 50, 150);
     cv::bitwise_or(mask, grd_mask, mask);
 
-    // 4) shadow mask
-    cv::threshold(HLS_chs[2], shadow_mask, 50, 1, cv::THRESH_BINARY);    // GT X  ==> mask = 1 
-    cv::bitwise_and(mask, shadow_mask, mask); // replace m1 with m1 && m2 (note nonzero is true in this case) 
+    // 4) Mask out high H
+    cv::threshold(HLS_chs[0], level_mask, 120, 1, cv::THRESH_BINARY_INV); // LT X  ==> mask = 1 
+    cv::bitwise_and(mask, level_mask, mask);
 
-    // 5) strange body mask (high S but low S and V)
-    cv::threshold(HLS_chs[0], shadow_mask, 50, 1, cv::THRESH_BINARY);    // GT X  ==> mask = 1 
-    cv::bitwise_and(mask, shadow_mask, mask); // replace m1 with m1 && m2 (note nonzero is true in this case) 
-    cv::threshold(HLS_chs[1], shadow_mask, 50, 1, cv::THRESH_BINARY);    // GT X  ==> mask = 1 
-    cv::bitwise_and(mask, shadow_mask, mask); // replace m1 with m1 && m2 (note nonzero is true in this case) 
+    // 5) S-shadow mask
+    cv::threshold(HLS_chs[2], level_mask, 20, 1, cv::THRESH_BINARY);    // GT X  ==> mask = 1 
+    cv::bitwise_and(mask, level_mask, mask); // replace m1 with m1 && m2 (note nonzero is true in this case) 
+
 
     // swap (test)
     // frame_in_RGB = frame_HLS;
+    // frame_in_RGB = HLS_chs[2];
 
     return mask; 
 }
@@ -363,95 +393,3 @@ std::vector<ImgProcessing::LaneLine> ImgProcessing::fit_xy_from_mask(cv::Mat & m
     return std::move(out_lanes);
 
 }
-
-
-// implementation of lane coefficient fitting tool (across agreggate into lane parameters)
-constexpr int LEFT = 0, RIGHT = 1, MIN = 0, MAX = 0;
-
-void Lane::update_fit(std::vector<ImgProcessing::LaneLine> lane_fit_from_frame){
-    a_[LEFT]  = lane_fit_from_frame[LEFT].poly_cfs[0];
-    a_[RIGHT] = lane_fit_from_frame[RIGHT].poly_cfs[0];
-
-    b_[LEFT]  = lane_fit_from_frame[LEFT].poly_cfs[1];
-    b_[RIGHT] = lane_fit_from_frame[RIGHT].poly_cfs[1];
-
-    c_[LEFT]  = lane_fit_from_frame[LEFT].poly_cfs[2]; 
-    c_[RIGHT] = lane_fit_from_frame[RIGHT].poly_cfs[2];
-
-    // score for weighted combination
-    w_[LEFT] = std::pow(lane_fit_from_frame[LEFT].pts.size()  * lane_fit_from_frame[LEFT].MSE *
-                       (lane_fit_from_frame[LEFT].y_max-lane_fit_from_frame[LEFT].y_min),2);
-    w_[RIGHT] = std::pow(lane_fit_from_frame[RIGHT].pts.size() * lane_fit_from_frame[RIGHT].MSE * 
-                        (lane_fit_from_frame[RIGHT].y_max-lane_fit_from_frame[RIGHT].y_min),2);
-
-    // update frame size and axis, if necessary
-    if (Nx_ != lane_fit_from_frame[LEFT].Nx || Ny_ !=  lane_fit_from_frame[LEFT].Ny){
-        Nx_ = lane_fit_from_frame[LEFT].Nx;
-        Ny_ = lane_fit_from_frame[LEFT].Ny;        
-    }
-
-    // update y range
-    y_left_[MIN] = lane_fit_from_frame[LEFT].y_min;
-    y_left_[MAX] = lane_fit_from_frame[LEFT].y_max;
-    y_right_[MIN] = lane_fit_from_frame[RIGHT].y_min;
-    y_right_[MAX] = lane_fit_from_frame[RIGHT].y_max;
-}
-
-std::vector<double> Lane::left_cfs(){
-    std::vector<double> out{a_[LEFT], b_[LEFT], c_[LEFT]};
-    return std::move(out);
-}
-
-std::vector<double> Lane::right_cfs(){
-    std::vector<double> out{a_[RIGHT], b_[RIGHT], c_[RIGHT]};
-    return std::move(out);
-}
-
-std::vector<double> Lane::center_cfs(){
-    int idx_best = w_[LEFT] > w_[RIGHT] ? LEFT : RIGHT;
-    std::vector<double> out{(a_[RIGHT]+a_[LEFT])/2, b_[idx_best], c_[idx_best]};
-    return std::move(out);
-}
-
-std::vector<double> Lane::best_left_cfs(){
-    int idx_best = w_[LEFT] > w_[RIGHT] ? LEFT : RIGHT;
-    std::vector<double> out{a_[LEFT], b_[idx_best], c_[idx_best]};
-    return std::move(out);
-}
-
-std::vector<double> Lane::best_right_cfs(){
-    int idx_best = w_[LEFT] > w_[RIGHT] ? LEFT : RIGHT;
-    std::vector<double> out{a_[RIGHT], b_[idx_best], c_[idx_best]};
-    return std::move(out);
-}
-
-// auxiliar
-void append_segment(std::vector<cv::Point> & line, const std::vector<cv::Point> & segment){
-    line.insert(std::end(line), std::begin(segment), std::end(segment));
-}
-
-// form polygon
-std::vector<cv::Point> Lane::getPolygon(){
-    // y axis up and down in steps
-    // logic: extrapolate only in reliable region
-    std::vector<cv::Point> yl1 {cv::Point(0,0), cv::Point(0,y_left_[MIN]/2), cv::Point(0,y_left_[MIN])};
-    std::vector<cv::Point> yl2 {cv::Point(0,y_left_[MIN]), cv::Point(0,(y_left_[MIN]+y_left_[MAX])/2), cv::Point(0,y_left_[MAX])};
-    std::vector<cv::Point> yl3 {cv::Point(0,y_left_[MAX]), cv::Point(0,(y_left_[MAX]+Ny_)/2), cv::Point(0,Ny_)};
-    
-    std::vector<cv::Point> yr1 {cv::Point(0,Ny_), cv::Point(0,(y_right_[MAX]+Ny_)/2), cv::Point(0,y_right_[MAX])};
-    std::vector<cv::Point> yr2 {cv::Point(0,y_right_[MAX]), cv::Point(0,(y_right_[MAX]+y_right_[MIN])/2), cv::Point(0,y_right_[MIN])};
-    std::vector<cv::Point> yr3 {cv::Point(0,y_right_[MIN]), cv::Point(0,y_right_[MIN]/2), cv::Point(0,0)};
-    
-    // polyline to plot
-    std::vector<cv::Point> line;
-    append_segment(line, EvalFit<cv::Point>(this->best_left_cfs(), yl1, true) );
-    append_segment(line, EvalFit<cv::Point>(this->left_cfs(), yl2, true) );
-    append_segment(line, EvalFit<cv::Point>(this->best_left_cfs(), yl3, true) );
-    append_segment(line, EvalFit<cv::Point>(this->best_right_cfs(), yr1, true) );
-    append_segment(line, EvalFit<cv::Point>(this->right_cfs(), yr2, true) );
-    append_segment(line, EvalFit<cv::Point>(this->best_right_cfs(), yr3, true) );
-    
-    
-    return std::move(line);
-}
-

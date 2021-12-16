@@ -1,5 +1,10 @@
 #include "math.h"
 
+
+//----------------------------------------
+// Fitting Tools
+// ---------------------------------------
+
 // based on
 // https://stackoverflow.com/questions/11449617/how-to-fit-the-2d-scatter-data-with-a-line-with-c
 std::vector<double> FitLine(const std::vector<cv::Point>& p, bool invert=false) {    
@@ -137,7 +142,11 @@ double chi_squared(const std::vector<double> & poly_cfs, const std::vector<cv::P
     return ch_sqr;
 }
 
-// evaluation for float and integer (plotting)
+//----------------------------------------
+// Evaluate Fit in cv::Point format
+// ---------------------------------------
+
+// evaluation for float and integer (plotting tool)
 template <typename T>
 std::vector<T> EvalFit(const std::vector<double> & poly_cfs, const std::vector<cv::Point>& p, bool invert){
     std::vector<T> eval;
@@ -192,12 +201,16 @@ template <> std::vector<cv::Point> EvalFit<cv::Point>(const std::vector<double> 
     }
     return eval; 
 }
+//----------------------------------------
 
 
+//----------------------------------------
+// Implementation of BufferStats class
+// ---------------------------------------
 
 // compute mean and std deviation for a buffer of N std::vectors<T>
 template<typename T>
-BufferStats<T>::BufferStats(int n):n_buffer(n), idx_buffer(0){
+BufferStats<T>::BufferStats(int n):n_buffer(n), idx_buffer(-1){
     n_buffer = n;
 }
 
@@ -257,7 +270,7 @@ template<typename T>
 std::vector<bool> BufferStats<T>::is_outlier(std::vector<T> x){
     std::vector<bool> is_outlier; 
     if(idx_buffer > 0){
-        is_outlier = std::vector<T>(n_pts);
+        is_outlier = std::vector<bool>(n_pts);
         std::vector<T> mn = this->mean(); 
         std::vector<T> sdv = this->stddev(); 
         for(int i =0; i<n_pts; ++i){
@@ -266,3 +279,12 @@ std::vector<bool> BufferStats<T>::is_outlier(std::vector<T> x){
     }
     return is_outlier; // empty if less than 2 points!
 }
+
+
+// implementation notes: 
+// https://stackoverflow.com/questions/495021/why-can-templates-only-be-implemented-in-the-header-file
+
+// explicit instantiation for needed types
+template class BufferStats<double>;
+template class BufferStats<int>;
+// ---------------------------------------

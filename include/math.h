@@ -15,6 +15,10 @@ std::vector<double> FitLine(const std::vector<cv::Point>& p, bool invert);
 std::vector<double> FitParabola(const std::vector<cv::Point>& p, bool invert);
 double chi_squared(const std::vector<double> & poly_cfs, const std::vector<cv::Point>& p, bool invert);
 
+
+// implementation notes: 
+// https://stackoverflow.com/questions/495021/why-can-templates-only-be-implemented-in-the-header-file
+
 // allow returning e.g. double or int, as needed
 template <typename T>
 std::vector<T> EvalFit(const std::vector<double> & poly_cfs, const std::vector<cv::Point>& p, bool invert);
@@ -26,13 +30,13 @@ class BufferStats{
 // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
 
     private:
-        int n_buffer, idx_buffer{-1};
+        int n_buffer, idx_buffer;
         int n_pts;
         std::vector<T> k_, dev_, dev2_;  // first value, deviations and squared dev
 
     public:
-        BufferStats();
-        BufferStats(int n_buffer);
+        BufferStats() = delete;
+        BufferStats(int n_buffer); // buffer size parameter is mandatory
 
         void add(std::vector<T> x);
         void remove(std::vector<T> x);
