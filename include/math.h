@@ -38,11 +38,11 @@ class BufferStats{
         BufferStats() = delete;
         BufferStats(int n_buffer); // buffer size parameter is mandatory
 
-        void add(std::vector<T> x);
-        void remove(std::vector<T> x);
+        void add(const std::vector<T> & x);
+        void remove(const std::vector<T> & x);
         std::vector<T> mean();
         std::vector<T> stddev();
-        std::vector<bool> is_outlier(std::vector<T> x);
+        bool is_outlier(const std::vector<T> & x);
 };
 
 #endif

@@ -39,6 +39,14 @@ void Lane::update_fit(std::vector<ImgProcessing::LaneLine> lane_fit_from_frame){
     x_near_[RIGHT] = a_[RIGHT] + b_[RIGHT]* Ny_ + c_[RIGHT]* Ny_ * Ny_;
 }
 
+std::vector<int> Lane::yleft(){
+    return std::move(std::vector<int>{y_left_[MIN], y_left_[MAX]});
+}
+std::vector<int> Lane::yright(){
+    return std::move(std::vector<int>{y_right_[MIN], y_right_[MAX]});
+}
+
+
 std::vector<double> Lane::left_cfs(){
     std::vector<double> out{a_[LEFT], b_[LEFT], c_[LEFT]};
     return std::move(out);
@@ -104,15 +112,84 @@ std::vector<std::vector<cv::Point>> Lane::getPolygon(){
 template class BufferStats<double>;
 template class BufferStats<int>;
 
-Road::Road(): n_buffer_(10), 
+Road::Road(): n_buffer_(10), n_frames_(0),
               stats_left_(BufferStats<double>(10)),
               stats_right_(BufferStats<double>(10)),
-              dx_(BufferStats<int>(10))
+              wlane_(BufferStats<int>(10))
 {}
 
-Road::Road(int n): n_buffer_(n), 
+Road::Road(int n): n_buffer_(n), n_frames_(0), 
                    stats_left_(BufferStats<double>(n)),
                    stats_right_(BufferStats<double>(n)),
-                   dx_(BufferStats<int>(n))
+                   wlane_(BufferStats<int>(n))
 {}
 
+// define between-frame statistics
+void Road::aggregate_frame_fit(Lane new_lane){
+
+    // gathering first inputs
+    if(n_frames_ < n_buffer_){
+        std::vector<int> lane_width{static_cast<int>(new_lane.x_near_[RIGHT] - new_lane.x_near_[LEFT])}; // make 1-element vector
+        wlane_.add(lane_width);
+
+        cf_buffer_left_.emplace(new_lane.left_cfs());
+        cf_buffer_right_.emplace(new_lane.right_cfs());
+
+        stats_left_.add(new_lane.left_cfs());
+        stats_right_.add(new_lane.right_cfs());
+
+        ++n_frames_;
+
+    // full buffer: assess pertinence and manage queue
+    } else {
+        // always gather non-outlier data, as lane width is constant
+        std::vector<int> lane_width{static_cast<int>(new_lane.x_near_[RIGHT] - new_lane.x_near_[LEFT])}; // make 1-element vector
+        if (!wlane_.is_outlier(lane_width)) wlane_.add(lane_width);
+        
+        // get more reliable estimate of local curvature by averaging inside the buffer
+        // left lane marking
+        if(!stats_left_.is_outlier(new_lane.left_cfs())){
+            stats_left_.add(new_lane.left_cfs());
+            stats_left_.remove(cf_buffer_left_.front());
+            cf_buffer_left_.emplace(new_lane.left_cfs());
+            cf_buffer_left_.pop();
+            // update y range to the last fit
+            y_left_[MIN] = new_lane.y_left_[MIN];
+            y_left_[MAX] = new_lane.y_left_[MAX];
+        }
+        // right lane marking
+        if(!stats_right_.is_outlier(new_lane.right_cfs())){
+            stats_right_.add(new_lane.right_cfs());
+            stats_right_.remove(cf_buffer_right_.front());
+            cf_buffer_right_.emplace(new_lane.right_cfs());
+            cf_buffer_right_.pop();    
+            // update y range to the last fit
+            y_right_[MIN] = new_lane.y_right_[MIN];
+            y_right_[MAX] = new_lane.y_right_[MAX];
+        }
+
+    }
+
+    // set own fields with treated coefficients ==> base for visualization
+    std::vector<double> cf_l = stats_left_.mean();
+    std::vector<double> cf_r = stats_right_.mean();
+
+    a_[LEFT]  = cf_l[0];
+    a_[RIGHT] = cf_r[0];
+
+    b_[LEFT]  = cf_l[1];
+    b_[RIGHT] = cf_r[1];
+
+    c_[LEFT]  = cf_l[2]; 
+    c_[RIGHT] = cf_r[2];
+
+    // update frame size and axis, if necessary
+    if (Nx_ != new_lane.Nx_ || Ny_ !=  new_lane.Ny_){
+        Nx_ = new_lane.Nx_;
+        Ny_ = new_lane.Ny_;        
+    }
+
+    // y = 0 is further to the car, keep track of nearest x=f(max(y)), which is more reliable
+    x_near_[LEFT]  = a_[LEFT]  + b_[LEFT] * Ny_ + c_[LEFT] * Ny_ * Ny_;
+    x_near_[RIGHT] = a_[RIGHT] + b_[RIGHT]* Ny_ + c_[RIGHT]* Ny_ * Ny_;
+}

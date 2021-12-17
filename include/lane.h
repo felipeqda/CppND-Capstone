@@ -8,6 +8,7 @@
 #include "img_processing.h"
 
 // store information of left and right lined in a frame, which characterizes the lane
+class Road;
 class Lane{    
     private:
         int Nx_, Ny_;
@@ -25,19 +26,23 @@ class Lane{
         std::vector<double> center_cfs();
         std::vector<double> best_right_cfs();
         std::vector<double> best_left_cfs();
+        std::vector<int> yleft();
+        std::vector<int> yright();
         std::vector<std::vector<cv::Point>> getPolygon();
+    
+    friend class Road;
 };
 
 // integrate lane information across frames, adding stats and a buffer to stabilize against outliers
 class Road : public Lane{
     private:
-        int n_buffer_;
+        int n_buffer_, n_frames_;
         std::queue<std::vector<double>> cf_buffer_left_;
         std::queue<std::vector<double>> cf_buffer_right_;
 
         BufferStats<double> stats_left_;
         BufferStats<double> stats_right_;
-        BufferStats<int> dx_;  // get typical values for distance between lanes
+        BufferStats<int> wlane_;  // get typical values for distance between lanes
     
     public:
         Road();

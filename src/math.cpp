@@ -215,7 +215,7 @@ BufferStats<T>::BufferStats(int n):n_buffer(n), idx_buffer(-1){
 }
 
 template<typename T>
-void BufferStats<T>::add(std::vector<T> x){ // add measurement x to the stats
+void BufferStats<T>::add(const std::vector<T> & x){ // add measurement x to the stats
     if(idx_buffer == -1){
         n_pts = x.size();
         k_ = x;
@@ -224,7 +224,7 @@ void BufferStats<T>::add(std::vector<T> x){ // add measurement x to the stats
     } // first measurement
 
     // process only a valid input
-    assert(n_pts == x.size());
+    assert(static_cast<size_t>(n_pts) == x.size());
 
     ++idx_buffer;
     for(int i =0; i<n_pts; ++i){
@@ -234,7 +234,7 @@ void BufferStats<T>::add(std::vector<T> x){ // add measurement x to the stats
 }
 
 template<typename T>
-void BufferStats<T>::remove(std::vector<T> x){  // remove measurement x from the stats
+void BufferStats<T>::remove(const std::vector<T> & x){  // remove measurement x from the stats
     --idx_buffer;
     for(int i =0; i<n_pts; ++i){
         dev_[i]  -= x[i] - k_[i];
@@ -267,17 +267,16 @@ std::vector<T> BufferStats<T>::stddev(){
 }
 
 template<typename T>
-std::vector<bool> BufferStats<T>::is_outlier(std::vector<T> x){
-    std::vector<bool> is_outlier; 
+bool BufferStats<T>::is_outlier(const std::vector<T> & x){
+    bool is_outlier{false}; 
     if(idx_buffer > 0){
-        is_outlier = std::vector<bool>(n_pts);
         std::vector<T> mn = this->mean(); 
         std::vector<T> sdv = this->stddev(); 
         for(int i =0; i<n_pts; ++i){
-            is_outlier[i] = std::fabs(x[i] - mn[i]) > sdv[i];
+            is_outlier = (is_outlier || std::fabs(x[i] - mn[i]) > sdv[i]);
         } 
     }
-    return is_outlier; // empty if less than 2 points!
+    return is_outlier; 
 }
 
 
