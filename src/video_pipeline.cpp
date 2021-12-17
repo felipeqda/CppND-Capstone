@@ -34,7 +34,7 @@ VideoPipeline::VideoPipeline(std::string input_file,
     topdown_transform = Warp2TopDown(frame_reduction);
     // Lane fitting tool
     local_lane_fit = Lane();
-    road_fit = Road(20); // set size of buffer
+    road_fit = Road(30); // set size of buffer for lane smoothing
 }
 
 // open video for reading, return success flag
@@ -112,8 +112,8 @@ cv::Mat VideoPipeline::apply_processing(cv::Mat frame_in){
     // III) apply color transformations and gradients to mask lane markings
     mask = ImgProcessing::get_lane_limits_mask(frame_warp);
 
-    // DEBUG: Mask out output frame (for visualization)
-    // frame_warp = ImgProcessing::mask_frame(frame_warp, mask);
+      // DEBUG: Mask out output frame (for visualization)
+      // frame_warp = ImgProcessing::mask_frame(frame_warp, mask);
 
     // IV) get fit from mask
     std::vector<ImgProcessing::LaneLine> lanes = ImgProcessing::fit_xy_from_mask(mask, frame_warp);
@@ -121,23 +121,24 @@ cv::Mat VideoPipeline::apply_processing(cv::Mat frame_in){
     local_lane_fit.update_fit(lanes); 
     road_fit.aggregate_frame_fit(local_lane_fit);
 
-
     // V) Annotate
     // show each lane
     // annotate::annotate_lanes(lanes, frame_warp);
     // show fitted area as overlay
-    std::vector<std::vector<cv::Point>> polygon = local_lane_fit.getPolygon();
+    // std::vector<std::vector<cv::Point>> polygon = local_lane_fit.getPolygon();
+    std::vector<std::vector<cv::Point>> polygon = road_fit.getPolygon();
     cv::Mat overlay = cv::Mat(frame_out.size(), frame_out.type());
     cv::fillPoly(overlay, polygon, cv::Scalar(0,255,0)); 
     
-
-    // DEBUG: show in warped mode
-    // cv::addWeighted(overlay, 0.1, frame_out, 1.0, 0.0, frame_out); // alpha overlay
+      // DEBUG: show in warped mode
+      // cv::addWeighted(overlay, 0.1, frame_out, 1.0, 0.0, frame_out); // alpha overlay
     
     // VI) De-Warp annotated image
     overlay = topdown_transform.unwarp(overlay);
     cv::addWeighted(overlay, 0.1, frame_out, 1.0, 0.0, frame_out); // alpha overlay
-    annotate::annotate_unwarpedlanes(lanes, topdown_transform, frame_out);
+    // annotate::annotate_unwarpedlanes(lanes, topdown_transform, frame_out);
+    // annotate::annotate_unwarpedlanes(local_lane_fit, topdown_transform, frame_out);
+    annotate::annotate_unwarpedlanes(road_fit, topdown_transform, frame_out);
 
     // VII) indicate curvature radius and add side frame    
     // frame_out = annotate::add_side_panel(frame_out);

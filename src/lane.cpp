@@ -4,7 +4,7 @@
 // III) Lane Class
 // ---------------------------------
 // implementation of lane coefficient fitting tool (across agreggate into lane parameters)
-constexpr int LEFT = 0, RIGHT = 1, MIN = 0, MAX = 0;
+constexpr int LEFT = 0, RIGHT = 1, MIN = 0, MAX = 1;
 
 void Lane::update_fit(std::vector<ImgProcessing::LaneLine> lane_fit_from_frame){
     a_[LEFT]  = lane_fit_from_frame[LEFT].poly_cfs[0];
@@ -37,6 +37,11 @@ void Lane::update_fit(std::vector<ImgProcessing::LaneLine> lane_fit_from_frame){
     // y = 0 is further to the car, keep track of nearest x=f(max(y)), which is more reliable
     x_near_[LEFT]  = a_[LEFT]  + b_[LEFT] * Ny_ + c_[LEFT] * Ny_ * Ny_;
     x_near_[RIGHT] = a_[RIGHT] + b_[RIGHT]* Ny_ + c_[RIGHT]* Ny_ * Ny_;
+    
+    // std::cout << "NL(a, b, c) = (" << a_[LEFT] << "," << b_[LEFT]  << ", " << c_[LEFT] <<")\n";
+    // std::cout << "NR(a, b, c) = (" << a_[RIGHT] << "," << b_[RIGHT]  << ", " << c_[RIGHT] <<")\n";
+    // std::cout << "xn=["<< x_near_[LEFT] << ", " << x_near_[RIGHT] <<"]\n";
+
 }
 
 std::vector<int> Lane::yleft(){
@@ -129,6 +134,10 @@ void Road::aggregate_frame_fit(Lane new_lane){
 
     // gathering first inputs
     if(n_frames_ < n_buffer_){
+
+        if (stats_left_.has_NaN(new_lane.left_cfs()) || stats_left_.has_NaN(new_lane.right_cfs()))
+            return; // do not add invalid points at start
+
         std::vector<int> lane_width{static_cast<int>(new_lane.x_near_[RIGHT] - new_lane.x_near_[LEFT])}; // make 1-element vector
         wlane_.add(lane_width);
 
@@ -139,6 +148,11 @@ void Road::aggregate_frame_fit(Lane new_lane){
         stats_right_.add(new_lane.right_cfs());
 
         ++n_frames_;
+        // update y range to the last frame
+        y_left_[MIN] = new_lane.y_left_[MIN];
+        y_left_[MAX] = new_lane.y_left_[MAX];
+        y_right_[MIN] = new_lane.y_right_[MIN];
+        y_right_[MAX] = new_lane.y_right_[MAX];
 
     // full buffer: assess pertinence and manage queue
     } else {
@@ -148,7 +162,7 @@ void Road::aggregate_frame_fit(Lane new_lane){
         
         // get more reliable estimate of local curvature by averaging inside the buffer
         // left lane marking
-        if(!stats_left_.is_outlier(new_lane.left_cfs())){
+        if( !stats_left_.has_NaN(new_lane.left_cfs()) && !stats_left_.is_outlier(new_lane.left_cfs())){
             stats_left_.add(new_lane.left_cfs());
             stats_left_.remove(cf_buffer_left_.front());
             cf_buffer_left_.emplace(new_lane.left_cfs());
@@ -158,7 +172,7 @@ void Road::aggregate_frame_fit(Lane new_lane){
             y_left_[MAX] = new_lane.y_left_[MAX];
         }
         // right lane marking
-        if(!stats_right_.is_outlier(new_lane.right_cfs())){
+        if(!stats_right_.has_NaN(new_lane.right_cfs()) && !stats_right_.is_outlier(new_lane.right_cfs())){
             stats_right_.add(new_lane.right_cfs());
             stats_right_.remove(cf_buffer_right_.front());
             cf_buffer_right_.emplace(new_lane.right_cfs());
@@ -183,6 +197,9 @@ void Road::aggregate_frame_fit(Lane new_lane){
     c_[LEFT]  = cf_l[2]; 
     c_[RIGHT] = cf_r[2];
 
+    w_[LEFT]  = new_lane.w_[LEFT];
+    w_[RIGHT] = new_lane.w_[RIGHT];
+
     // update frame size and axis, if necessary
     if (Nx_ != new_lane.Nx_ || Ny_ !=  new_lane.Ny_){
         Nx_ = new_lane.Nx_;
@@ -192,4 +209,14 @@ void Road::aggregate_frame_fit(Lane new_lane){
     // y = 0 is further to the car, keep track of nearest x=f(max(y)), which is more reliable
     x_near_[LEFT]  = a_[LEFT]  + b_[LEFT] * Ny_ + c_[LEFT] * Ny_ * Ny_;
     x_near_[RIGHT] = a_[RIGHT] + b_[RIGHT]* Ny_ + c_[RIGHT]* Ny_ * Ny_;
+
+    // std::cout << "ML(a, b, c) = (" << a_[LEFT] << "," << b_[LEFT]  << ", " << c_[LEFT] <<")\n";
+    // std::cout << "MR(a, b, c) = (" << a_[RIGHT] << "," << b_[RIGHT]  << ", " << c_[RIGHT] <<")\n";
+    // std::cout << "xn=["<< x_near_[LEFT] << ", " << x_near_[RIGHT] <<"]\n";
+
+    // std::vector<double> vv1 = stats_left_.stddev();
+    // if (!vv1.empty()) std::cout << "STDL(a, b, c) = (" << vv1[0] << "," << vv1[1]  << ", " << vv1[2] <<")\n";
+    // std::vector<double> vv2 = stats_right_.stddev();
+    // if (!vv2.empty())  std::cout << "STDR(a, b, c) = (" << vv2[0] << "," << vv2[1]  << ", " << vv2[2] <<")\n";
+    
 }

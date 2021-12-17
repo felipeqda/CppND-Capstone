@@ -11,9 +11,12 @@
 
 namespace annotate{
     cv::Mat add_side_panel(cv::Mat & frame_in);
+    // annotate based on frame info
     void annotate_lanes(std::vector<ImgProcessing::LaneLine> & lanes, cv::Mat & frame, cv::Scalar color = cv::Scalar(255,255,128));
     void annotate_unwarpedlanes(std::vector<ImgProcessing::LaneLine> & lanes , Warp2TopDown & transform, cv::Mat & frame, cv::Scalar color = cv::Scalar(255,255,128));
-    void annotate_unwarpedlanes(Lane & lanes, Warp2TopDown & transform, cv::Mat & frame, cv::Scalar color);
+    void annotate_unwarpedlanes(Lane & lanes, Warp2TopDown & transform, cv::Mat & frame, cv::Scalar color = cv::Scalar(255,255,128));
+    // annotate based on road (buffer of frames) info
+    void annotate_unwarpedlanes(Road & road, Warp2TopDown & transform, cv::Mat & frame, cv::Scalar color = cv::Scalar(255,255,128));
 };
 
 #endif

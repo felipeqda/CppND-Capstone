@@ -46,3 +46,48 @@ void annotate::annotate_unwarpedlanes(std::vector<ImgProcessing::LaneLine> & lan
         cv::polylines(frame, line, false, color, 2);
     }
 }
+
+// overloads for convinience win using post-treated coeffs
+constexpr int MIN=0, MAX=1;
+void annotate::annotate_unwarpedlanes(Lane & lanes, Warp2TopDown & transform, 
+                                      cv::Mat & frame, cv::Scalar color){
+   
+    std::vector<int> yl = lanes.yleft();
+    std::vector<int> yr = lanes.yright();
+
+    // form polylines and plot
+    // 1) left lane
+    std::vector<cv::Point> y{cv::Point(0,yl[MIN]), cv::Point(0,(yl[MIN]+yl[MAX])/2),
+                             cv::Point(0,yl[MAX])};
+    std::vector<cv::Point> line = EvalFit<cv::Point>(lanes.left_cfs(), y, true);  // only pts.y is used
+    line = transform.unwarp_path(line);
+    cv::polylines(frame, line, false, color, 2);
+    //2 ) right lane
+    y.clear();
+    y.insert(y.end(), {cv::Point(0,yr[MIN]), cv::Point(0,(yr[MIN]+yr[MAX])/2), cv::Point(0,yr[MAX])});
+    line = EvalFit<cv::Point>(lanes.right_cfs(), y, true);  // only pts.y is used
+    line = transform.unwarp_path(line);
+    cv::polylines(frame, line, false, color, 2);    
+}
+// version for road (more reliable coefficients)
+void annotate::annotate_unwarpedlanes(Road & road, Warp2TopDown & transform, 
+                                      cv::Mat & frame, cv::Scalar color){
+   
+    std::vector<int> yl = road.yleft();
+    std::vector<int> yr = road.yright();
+    int ymax = yr[MAX] > yl[MAX] ? yr[MAX] : yl[MAX];
+    int ymin = yr[MIN] < yl[MIN] ? yr[MIN] : yl[MIN];
+
+    // form polylines and plot
+    // axis
+    std::vector<cv::Point> y{cv::Point(0,ymin), cv::Point(0,(ymin+ymax)/2),
+                             cv::Point(0,ymax)};
+    // 1) left lane
+    std::vector<cv::Point> line = EvalFit<cv::Point>(road.left_cfs(), y, true);  // only pts.y is used
+    line = transform.unwarp_path(line);
+    cv::polylines(frame, line, false, color, 2);
+    //2 ) right lane
+    line = EvalFit<cv::Point>(road.right_cfs(), y, true);  // only pts.y is used
+    line = transform.unwarp_path(line);
+    cv::polylines(frame, line, false, color, 2);    
+}

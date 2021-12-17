@@ -43,6 +43,7 @@ class BufferStats{
         std::vector<T> mean();
         std::vector<T> stddev();
         bool is_outlier(const std::vector<T> & x);
+        bool has_NaN(const std::vector<T> & x);
 };
 
 #endif

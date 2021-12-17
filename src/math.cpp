@@ -273,10 +273,19 @@ bool BufferStats<T>::is_outlier(const std::vector<T> & x){
         std::vector<T> mn = this->mean(); 
         std::vector<T> sdv = this->stddev(); 
         for(int i =0; i<n_pts; ++i){
-            is_outlier = (is_outlier || std::fabs(x[i] - mn[i]) > sdv[i]);
+            is_outlier = (is_outlier || std::fabs(x[i] - mn[i]) > 10.0*sdv[i]);
         } 
     }
     return is_outlier; 
+}
+
+template<typename T>
+bool BufferStats<T>::has_NaN(const std::vector<T> & x){
+    bool has_nan{false}; 
+    for(int i =0; i<n_pts; ++i){
+        has_nan = (has_nan || std::isnan(x[i]));
+    } 
+    return has_nan; 
 }
 
 
