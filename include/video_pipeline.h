@@ -7,6 +7,7 @@
 #include <opencv2/imgproc.hpp>  // Image processing operations
 #include <opencv2/videoio.hpp>
 #include <opencv2/highgui.hpp>  // OpenCV window I/O
+#include <queue>
 
 #include "tqdm.h"
 #include "keyboard_interface.h"
@@ -39,10 +40,12 @@ class VideoPipeline{
         Warp2TopDown topdown_transform;
         Lane local_lane_fit;
         Road road_fit;
+        std::queue<double> r_curve;
+
 
     public:
         //constructor
-        VideoPipeline(std::string file_in, std::string win_label, float frame_reduction);
+        VideoPipeline(std::string file_in, std::string win_label, float frame_reduction, int n_buffer);
 
         bool read_video(std::string path);
         bool write_video(std::string path, cv::Size output_size);

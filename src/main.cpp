@@ -27,7 +27,7 @@ int main(int argc, char *argv[]){
     // TODO: allow input of file
     help();
 
-    std::string input_file = std::string("/home/workspace/CarND-Advanced-Lane-Lines/project_video.mp4");
+    std::string input_file = std::string("../data/project_video.mp4");
     float img_reduction = 0.5;
 
     VideoPipeline pipeline = VideoPipeline(input_file,

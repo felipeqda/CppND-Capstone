@@ -86,7 +86,7 @@ void append_segment(std::vector<cv::Point> & line, const std::vector<cv::Point> 
 }
 
 // form polygon
-std::vector<std::vector<cv::Point>> Lane::getPolygon(){
+std::vector<std::vector<cv::Point>> Lane::getPolygon(bool filter){
     // y axis down and up in steps
     // logic: extrapolate only in reliable region
     std::vector<cv::Point> yl1 {cv::Point(0,0), cv::Point(0,y_left_[MIN]/2), cv::Point(0,y_left_[MIN])};
@@ -99,15 +99,46 @@ std::vector<std::vector<cv::Point>> Lane::getPolygon(){
     
     // polyline to plot
     std::vector<cv::Point> line;
-    append_segment(line, EvalFit<cv::Point>(this->best_left_cfs(), yl1, true) );
-    append_segment(line, EvalFit<cv::Point>(this->left_cfs(), yl2, true) );
-    append_segment(line, EvalFit<cv::Point>(this->best_left_cfs(), yl3, true) );
-    append_segment(line, EvalFit<cv::Point>(this->best_right_cfs(), yr1, true) );
-    append_segment(line, EvalFit<cv::Point>(this->right_cfs(), yr2, true) );
-    append_segment(line, EvalFit<cv::Point>(this->best_right_cfs(), yr3, true) );
-    
+    if(filter){
+        append_segment(line, EvalFit<cv::Point>(this->best_left_cfs(), yl1, true) );
+        append_segment(line, EvalFit<cv::Point>(this->left_cfs(), yl2, true) );
+        append_segment(line, EvalFit<cv::Point>(this->best_left_cfs(), yl3, true) );
+        append_segment(line, EvalFit<cv::Point>(this->best_right_cfs(), yr1, true) );
+        append_segment(line, EvalFit<cv::Point>(this->right_cfs(), yr2, true) );
+        append_segment(line, EvalFit<cv::Point>(this->best_right_cfs(), yr3, true) );    
+    } else {
+        append_segment(line, EvalFit<cv::Point>(this->left_cfs(),  yl1, true) );
+        append_segment(line, EvalFit<cv::Point>(this->left_cfs(),  yl2, true) );
+        append_segment(line, EvalFit<cv::Point>(this->left_cfs(),  yl3, true) );
+        append_segment(line, EvalFit<cv::Point>(this->right_cfs(), yr1, true) );
+        append_segment(line, EvalFit<cv::Point>(this->right_cfs(), yr2, true) );
+        append_segment(line, EvalFit<cv::Point>(this->right_cfs(), yr3, true) );          
+    }
+
     std::vector<std::vector<cv::Point>> out{line};
     return std::move(out);
+}
+
+std::vector<double> Lane::cf_px2m(std::vector<double> poly_cf_px, cv::Shape img_shape){
+    // Convert from pixel polynomial coefficients (order 2) to m x = f(y), with origin at center/bottom of image, positive y upwards!
+    int Ny = img_shape.rows;
+    int Nx = img_shape.cols;  
+    // Define conversions in x and y from pixels space to meters (approximate values for camera)
+    float ym_per_pix = 30.0 / 720; // meters per pixel in y dimension
+    float xm_per_pix = 3.7 / 700 ; // meters per pixel in x dimension
+
+    // coordinate system of the lane [m] in top-down view:
+    // x = 0 at the center of the image, +x = right
+    // y = 0 at the botton, +y = top
+    // pixel coordinate system: [0,0] at top left, [Nx, Ny] at bottom right
+    // x_m = (x_px - Nx/2)*xm_per_pix
+    // y_m = (Ny - y_px)*ym_per_pix
+    // parabola: a + b * x + c * x*x;
+    std::vector<double> poly_cf_m { xm_per_pix * (poly_cf_px[0] - Nx / 2 + Ny * (poly_cf_px[1] + poly_cf_px[2] * Ny)),
+                                    -(2 * xm_per_pix / ym_per_pix * Ny * poly_cf_px[2] + xm_per_pix / ym_per_pix * poly_cf_px[1]),
+                                    xm_per_pix / (ym_per_pix ** 2) * poly_cf_px[2] };
+                                    
+    return std::move(poly_cf_m);
 }
 
 // ---------------------------------
@@ -154,15 +185,27 @@ void Road::aggregate_frame_fit(Lane new_lane){
         y_right_[MIN] = new_lane.y_right_[MIN];
         y_right_[MAX] = new_lane.y_right_[MAX];
 
+        // update frame size and axis, if necessary
+        if (Nx_ != new_lane.Nx_ || Ny_ !=  new_lane.Ny_){
+            Nx_ = new_lane.Nx_;
+            Ny_ = new_lane.Ny_;        
+        }
+
     // full buffer: assess pertinence and manage queue
-    } else {
+    } else {        
         // always gather non-outlier data, as lane width is constant
         std::vector<int> lane_width{static_cast<int>(new_lane.x_near_[RIGHT] - new_lane.x_near_[LEFT])}; // make 1-element vector
         if (!wlane_.is_outlier(lane_width)) wlane_.add(lane_width);
         
         // get more reliable estimate of local curvature by averaging inside the buffer
+        // assess goodness of fit to determine outlier range (more reliable ==> higher sigma threshold which redues filtering)
+        float sigma_out_left = 1.0  + 9.0*static_cast<float>(y_left_[MAX]  - y_left_[MIN])/N_y;
+        float sigma_out_right = 1.0 + 9.0*static_cast<float>(y_right_[MAX] - y_right_[MIN])/N_y;
+        std::cout << "sigma factors : [" <<  sigma_out_left << " , " << sigma_out_right <<"\n";
+        // TODO: delete couts!
+
         // left lane marking
-        if( !stats_left_.has_NaN(new_lane.left_cfs()) && !stats_left_.is_outlier(new_lane.left_cfs())){
+        if( !stats_left_.has_NaN(new_lane.left_cfs()) && !stats_left_.is_outlier(new_lane.left_cfs(), sigma_out_left)){
             stats_left_.add(new_lane.left_cfs());
             stats_left_.remove(cf_buffer_left_.front());
             cf_buffer_left_.emplace(new_lane.left_cfs());
@@ -172,7 +215,7 @@ void Road::aggregate_frame_fit(Lane new_lane){
             y_left_[MAX] = new_lane.y_left_[MAX];
         }
         // right lane marking
-        if(!stats_right_.has_NaN(new_lane.right_cfs()) && !stats_right_.is_outlier(new_lane.right_cfs())){
+        if(!stats_right_.has_NaN(new_lane.right_cfs()) && !stats_right_.is_outlier(new_lane.right_cfs(), sigma_out_right)){
             stats_right_.add(new_lane.right_cfs());
             stats_right_.remove(cf_buffer_right_.front());
             cf_buffer_right_.emplace(new_lane.right_cfs());

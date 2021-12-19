@@ -8,7 +8,8 @@
 // constructor
 VideoPipeline::VideoPipeline(std::string input_file, 
                              std::string win_label="Input Video",
-                             float frame_reduction = 1.0){
+                             float frame_reduction = 1.0,
+                             int n_buffer = 20){
     // open file for reading
     filename = input_file;
     valid_video = this->read_video(filename);
@@ -34,7 +35,8 @@ VideoPipeline::VideoPipeline(std::string input_file,
     topdown_transform = Warp2TopDown(frame_reduction);
     // Lane fitting tool
     local_lane_fit = Lane();
-    road_fit = Road(30); // set size of buffer for lane smoothing
+    road_fit = Road(n_buffer); // set size of buffer for lane smoothing
+    r_curve = std::queue<double>(n_buffer);
 }
 
 // open video for reading, return success flag
@@ -141,7 +143,9 @@ cv::Mat VideoPipeline::apply_processing(cv::Mat frame_in){
     annotate::annotate_unwarpedlanes(road_fit, topdown_transform, frame_out);
 
     // VII) indicate curvature radius and add side frame    
-    // frame_out = annotate::add_side_panel(frame_out);
+    r_curve.emplace();
+    if (idx_frame < n_frame) r_curve.pop();
+    // frame_out = annotate::add_side_panel(frame_out, r_curve.front(), r_curve.back(););
     
   	return std::move(frame_out);
 }

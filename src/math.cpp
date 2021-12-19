@@ -267,13 +267,25 @@ std::vector<T> BufferStats<T>::stddev(){
 }
 
 template<typename T>
-bool BufferStats<T>::is_outlier(const std::vector<T> & x){
+std::vector<T> BufferStats<T>::stddev(float factor){ // allow 1-sigma, 3-sigma, etc....
+    std::vector<T> sdv; 
+    if(idx_buffer > 0){
+        sdv = std::vector<T>(n_pts);
+        for(int i =0; i<n_pts; ++i){
+            sdv[i] = factor*std::sqrt( (dev2_[i] - (dev_[i] * dev_[i]) / (idx_buffer+1)) / (idx_buffer) );
+        } 
+    }
+    return sdv; // empty if less than 2 points!
+}
+
+template<typename T>
+bool BufferStats<T>::is_outlier(const std::vector<T> & x, float sigma_factor){
     bool is_outlier{false}; 
     if(idx_buffer > 0){
         std::vector<T> mn = this->mean(); 
-        std::vector<T> sdv = this->stddev(); 
+        std::vector<T> sdv = this->stddev(sigma_factor); 
         for(int i =0; i<n_pts; ++i){
-            is_outlier = (is_outlier || std::fabs(x[i] - mn[i]) > 10.0*sdv[i]);
+            is_outlier = (is_outlier || std::fabs(x[i] - mn[i]) > sdv[i]);
         } 
     }
     return is_outlier; 
@@ -296,3 +308,77 @@ bool BufferStats<T>::has_NaN(const std::vector<T> & x){
 template class BufferStats<double>;
 template class BufferStats<int>;
 // ---------------------------------------
+
+
+// ---------------------------------------
+// Radius of curvature-related
+// ---------------------------------------
+// compute radius of curvature of a x=f(y) parabola, usually taken at bottom of image
+double r_curve(std::vector<double>polycoef, float y){
+    // parabola: a + b * x + c * x*x
+    return ((1 + (2 * polycoef[2] * y + polycoef[1]) ** 2) ** 1.5 / np.abs(2 * polycoef[2]));
+}
+// ---------------------------------------
+
+
+
+/*def cf_px2m(poly_cf_px, img_shape):
+
+    Ny, Nx = img_shape[0:2]
+    # Define conversions in x and y from pixels space to meters (approximate values for camera)
+    ym_per_pix = 30 / 720  # meters per pixel in y dimension
+    xm_per_pix = 3.7 / 700  # meters per pixel in x dimension
+
+    # coordinate system of the lane [m] in top-down view:
+    # x = 0 at the center of the image, +x = right
+    # y = 0 at the botton, +y = top
+    # pixel coordinate system: [0,0] at top left, [Nx, Ny] at bottom right
+    # x_m = (x_px - Nx/2)*xm_per_pix
+    # y_m = (Ny - y_px)*ym_per_pix
+    a, b, c = poly_cf_px
+    poly_cf_m = np.array([xm_per_pix / (ym_per_pix ** 2) * a,
+                          -(2 * xm_per_pix / ym_per_pix * Ny * a + xm_per_pix / ym_per_pix * b),
+                          xm_per_pix * (c - Nx / 2 + Ny * (b + a * Ny))])
+    return poly_cf_m
+
+
+
+
+
+"""VI) Convert from pixel coordinates to m and compute R_curvature/distance from center """
+
+# convert coefficients to m
+cf_meters_left = cf_px2m(left.cf, img_RGB.shape)
+cf_meters_right = cf_px2m(right.cf, img_RGB.shape)
+# calculate curvature, center of lane in px and deviation from center of image/car center in m
+curvature = r_curve(cf_meters_left, 0.0) #bottom ==> y = 0.0 in new coordinate system
+x_center_px = 0.5*(left.x_bottom+right.x_bottom)
+deltax_center = 0.5*(cf_meters_left[2]+cf_meters_right[2])
+
+
+# curvature ranges (used to highligh color of curvature)
+# http://onlinemanuals.txdot.gov/txdotmanuals/rdw/horizontal_alignment.htm#BGBHGEGC
+curv_rgs = 0.3048*np.array([643, 4575]) #absolute minimum values
+# create a colormap which is red-yellow-green in the ranges
+# provide a dictionary with 'red', 'green', 'blue' keys with (x, y0, y1) tuples
+# x[i] < x_in < x[i+1] => color between y1[i] and y0[i+1]
+# x = 0.0 - 0.5 - 1.0 ==> R, Y='FFFF00', G
+cdict_anchor = {'red':   [[0.0,  1.0, 1.0], [0.5, 1.0, 1.0], [1.0, 0.0, 0.0]],
+                'green': [[0.0,  0.0, 0.0], [0.5, 1.0, 1.0], [1.0, 1.0, 1.0]],
+                'blue':  [[0.0,  0.0, 0.0], [0.5, 0.0, 0.0], [1.0, 0.0, 0.0]]}
+my_cmp = LinearSegmentedColormap('GoodBad', segmentdata=cdict_anchor, N=256)
+# use inverse [-->0 for straight line, normalize to 1 for minimum possible values] curvature to scale color
+inv_Curv = (1/curvature)/(1/np.min(curv_rgs)) #[0-1]
+
+# plot final output
+fig = plt.figure(num=15)
+fig.canvas.set_window_title("Output frame")
+plt.imshow(img_out)
+
+# print current curvature
+plt.text(Nx/2, 40, r"$R_{curve} = $",#+"{:.2f} [m]".format(curvature),
+         horizontalalignment='left',verticalalignment='center',
+         fontsize=12, weight='bold', color='w')
+plt.text(Nx/2+180, 40, "{:.2f} [m]".format(curvature),
+         horizontalalignment='left',verticalalignment='center',
+         fontsize=12, weight='bold', color=my_cmp(1.0-inv_Curv))*/

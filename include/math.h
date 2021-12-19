@@ -15,6 +15,7 @@ std::vector<double> FitLine(const std::vector<cv::Point>& p, bool invert);
 std::vector<double> FitParabola(const std::vector<cv::Point>& p, bool invert);
 double chi_squared(const std::vector<double> & poly_cfs, const std::vector<cv::Point>& p, bool invert);
 
+double r_curve(std::vector<double>polycoef, float y);
 
 // implementation notes: 
 // https://stackoverflow.com/questions/495021/why-can-templates-only-be-implemented-in-the-header-file
@@ -42,7 +43,8 @@ class BufferStats{
         void remove(const std::vector<T> & x);
         std::vector<T> mean();
         std::vector<T> stddev();
-        bool is_outlier(const std::vector<T> & x);
+        std::vector<T> stddev(float sigma);
+        bool is_outlier(const std::vector<T> & x, float sigma_factor = 1.0);
         bool has_NaN(const std::vector<T> & x);
 };
 
