@@ -9,7 +9,7 @@
 VideoPipeline::VideoPipeline(std::string input_file, 
                              std::string win_label,
                              float frame_reduction,
-                             int n_buffer){
+                             int n_buffer):n_buffer(n_buffer){
     // open file for reading
     filename = input_file;
     valid_video = this->read_video(filename);
@@ -146,8 +146,9 @@ cv::Mat VideoPipeline::apply_processing(cv::Mat frame_in){
     // convert coefficients to m
     std::vector<double> cf_meters = road_fit.cf_px2m(road_fit.center_cfs(), frame_out.size());
     radius_m.emplace(r_curve(cf_meters, 0.0));  // bottom ==> y = 0.0 in new coordinate system
-    if (idx_frame < n_frames) radius_m.pop();
+    if (idx_frame > n_buffer) radius_m.pop();
     frame_out = annotate::add_side_panel(frame_out, radius_m.front(), radius_m.back());
-    
+
   	return std::move(frame_out);
+    // return std::move(frame_in);
 }

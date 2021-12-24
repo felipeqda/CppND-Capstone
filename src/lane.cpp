@@ -116,7 +116,7 @@ std::vector<std::vector<cv::Point>> Lane::getPolygon(bool filter){
 }
 
 std::vector<double> Lane::cf_px2m(std::vector<double> poly_cf_px, cv::Size img_size){
-    // Convert from pixel polynomial coefficients (order 2) to m x = f(y), with origin at center/bottom of image, positive y upwards!
+    // Convert from pixel polynomial coefficients (order 2) to m: x = f(y), with origin at center/bottom of image, positive y upwards!
     int Ny = img_size.height;
     int Nx = img_size.width;  
     // Define conversions in x and y from pixels space to meters (approximate values for camera)
@@ -129,9 +129,9 @@ std::vector<double> Lane::cf_px2m(std::vector<double> poly_cf_px, cv::Size img_s
     // pixel coordinate system: [0,0] at top left, [Nx, Ny] at bottom right
     // x_m = (x_px - Nx/2)*xm_per_pix
     // y_m = (Ny - y_px)*ym_per_pix
-    // parabola: a + b * x + c * x*x;
+    // parabola: x(y) = a + b * y + c * y*y;
     std::vector<double> poly_cf_m { xm_per_pix * (poly_cf_px[0] - Nx / 2 + Ny * (poly_cf_px[1] + poly_cf_px[2] * Ny)),
-                                    -(2 * xm_per_pix / ym_per_pix * Ny * poly_cf_px[2] + xm_per_pix / ym_per_pix * poly_cf_px[1]),
+                                  -(2 * xm_per_pix / ym_per_pix * Ny * poly_cf_px[2] + xm_per_pix / ym_per_pix * poly_cf_px[1]),
                                     xm_per_pix / (ym_per_pix * ym_per_pix) * poly_cf_px[2] };
                                     
     return std::move(poly_cf_m);

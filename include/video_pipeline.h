@@ -22,7 +22,7 @@ class VideoPipeline{
         bool valid_video{false};
         cv::VideoCapture input_video;
         cv::Size frame_size_input;
-        int n_frames{0}, idx_frame{-1};
+        int n_frames{0}, idx_frame{-1}, n_buffer{0};
         
         float frame_reduction_; // shrink factor for frame
         int kb_delay, default_delay{5}; // delay in [ms], 0 means wait indefinitely

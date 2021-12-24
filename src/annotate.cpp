@@ -12,33 +12,50 @@ cv::Mat annotate::add_side_panel(cv::Mat & frame_in, double r_fwd, double r_rear
     cv::hconcat(car, v_blank, car);
 
     // zero-pad vertically
-    cv::Mat h_blank =  cv::Mat::zeros(cv::Size(panel_width, frame_in.size().height/2-car_size.height/2), frame_in.type());
+    cv::Mat h_blank = cv::Mat::zeros(cv::Size(panel_width, frame_in.size().height/2-car_size.height/2), frame_in.type());
     cv::Mat side_bar;
     cv::vconcat(h_blank, car, side_bar);
     cv::vconcat(side_bar, h_blank, side_bar);
 
     // draw curves
     std::vector<cv::Point> c1l, c1r, c2l, c2r;
-    float px2m = 40/1.7;
+    int Ny = frame_in.size().height;
+    
+    float px2m = 40/1.7/2;
+    
     for(int i = 0; i < 100; ++i) {
-        double ang = M_PI / 2.0 * (1.0 + static_cast<double>(i)/100); // pi/2 to pi
-        // curve ahead (in pixels)
-        double x_ctr = r_fwd > 0 ? 1: -1;
-        c1l.emplace_back(cv::Point(panel_width/2 + car_size.width/2 + px2m * r_fwd * (x_ctr + std::cos(ang)), px2m* r_fwd * std::sin(ang)));
-        c1r.emplace_back(cv::Point(panel_width/2 - car_size.width/2 + px2m * r_fwd * (x_ctr + std::cos(ang)), px2m* r_fwd * std::sin(ang)));
-
-        // curve back (in pixels)
-        ang += M_PI/2;
-        x_ctr = r_rear > 0 ? 1: -1;
-        c2l.emplace_back(cv::Point(panel_width/2 + car_size.width/2 + px2m * r_rear * (x_ctr + std::cos(ang)), px2m * r_rear * std::sin(ang)));
-        c2r.emplace_back(cv::Point(panel_width/2 - car_size.width/2 + px2m * r_rear * (x_ctr + std::cos(ang)), px2m * r_rear * std::sin(ang)));
+        // curve ahead (in pixels): negative curvature to the left 
+        if(r_fwd > 0){
+            double ang = M_PI / 2.0 * (1 + static_cast<double>(i)/99); // pi/2 to pi   
+            c1l.emplace_back(cv::Point(panel_width/2 - car_size.width + px2m * r_fwd * (1 + std::cos(ang)), Ny/2 - px2m* r_fwd * std::sin(ang)));
+            c1r.emplace_back(cv::Point(panel_width/2 + car_size.width + px2m * r_fwd * (1 + std::cos(ang)), Ny/2 - px2m* r_fwd * std::sin(ang)));
+        } else {
+            double ang = M_PI / 2.0 * (static_cast<double>(i)/99); // 0 to pi/2   
+            c1l.emplace_back(cv::Point(panel_width/2 - car_size.width - px2m * r_fwd * (-1 + std::cos(ang)), Ny/2 + px2m* r_fwd * std::sin(ang)));
+            c1r.emplace_back(cv::Point(panel_width/2 + car_size.width - px2m * r_fwd * (-1 + std::cos(ang)), Ny/2 + px2m* r_fwd * std::sin(ang)));
+        }
+        
+        // curve back (in pixels): negative curvature to the left
+        if(r_rear > 0){
+            double ang = M_PI / 2.0 * (2+static_cast<double>(i)/99); // pi to 3*pi/2   
+            c2l.emplace_back(cv::Point(panel_width/2 - car_size.width + px2m * r_rear * (1 + std::cos(ang)), Ny/2 - px2m* r_rear * std::sin(ang)));
+            c2r.emplace_back(cv::Point(panel_width/2 + car_size.width + px2m * r_rear * (1 + std::cos(ang)), Ny/2 - px2m* r_rear * std::sin(ang)));
+        } else {
+            double ang = M_PI / 2.0 * (-1 + static_cast<double>(i)/99); // -pi/2 to 0   
+            c2l.emplace_back(cv::Point(panel_width/2 - car_size.width - px2m * r_rear * (-1 + std::cos(ang)), Ny/2 + px2m* r_rear * std::sin(ang)));
+            c2r.emplace_back(cv::Point(panel_width/2 + car_size.width - px2m * r_rear * (-1 + std::cos(ang)), Ny/2 + px2m* r_rear * std::sin(ang)));
+        }
 
     }
-    cv::polylines(side_bar, c1l, false, cv::Scalar(255, 255, 255), 2);
-    cv::polylines(side_bar, c1r, false, cv::Scalar(255, 255, 255), 2);
-    cv::polylines(side_bar, c2l, false, cv::Scalar(255, 255, 255), 2);
-    cv::polylines(side_bar, c2r, false, cv::Scalar(255, 255, 255), 2);
+    cv::polylines(side_bar, c1l, false, cv::Scalar(255, 255,  0), 2);
+    cv::polylines(side_bar, c1r, false, cv::Scalar(255, 255,  0), 2);
+    cv::polylines(side_bar, c2l, false, cv::Scalar(255, 255, 80), 2);
+    cv::polylines(side_bar, c2r, false, cv::Scalar(255, 255, 80), 2);
     
+    // illustrate reference system
+    // std::vector<cv::Point> ox{cv::Point(0,Ny/2), cv::Point(panel_width, Ny/2)}, oy{cv::Point(panel_width/2,0), cv::Point(panel_width/2, Ny)};
+    // cv::polylines(side_bar, ox, false, cv::Scalar(0, 255,   0), 2);
+    // cv::polylines(side_bar, oy, false, cv::Scalar(0, 0,   255), 2);
 
     // add to frame
     cv::Mat frame_out;
