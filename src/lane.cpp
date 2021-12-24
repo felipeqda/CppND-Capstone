@@ -37,10 +37,6 @@ void Lane::update_fit(std::vector<ImgProcessing::LaneLine> lane_fit_from_frame){
     // y = 0 is further to the car, keep track of nearest x=f(max(y)), which is more reliable
     x_near_[LEFT]  = a_[LEFT]  + b_[LEFT] * Ny_ + c_[LEFT] * Ny_ * Ny_;
     x_near_[RIGHT] = a_[RIGHT] + b_[RIGHT]* Ny_ + c_[RIGHT]* Ny_ * Ny_;
-    
-    // std::cout << "NL(a, b, c) = (" << a_[LEFT] << "," << b_[LEFT]  << ", " << c_[LEFT] <<")\n";
-    // std::cout << "NR(a, b, c) = (" << a_[RIGHT] << "," << b_[RIGHT]  << ", " << c_[RIGHT] <<")\n";
-    // std::cout << "xn=["<< x_near_[LEFT] << ", " << x_near_[RIGHT] <<"]\n";
 
 }
 
@@ -119,10 +115,10 @@ std::vector<std::vector<cv::Point>> Lane::getPolygon(bool filter){
     return std::move(out);
 }
 
-std::vector<double> Lane::cf_px2m(std::vector<double> poly_cf_px, cv::Shape img_shape){
+std::vector<double> Lane::cf_px2m(std::vector<double> poly_cf_px, cv::Size img_size){
     // Convert from pixel polynomial coefficients (order 2) to m x = f(y), with origin at center/bottom of image, positive y upwards!
-    int Ny = img_shape.rows;
-    int Nx = img_shape.cols;  
+    int Ny = img_size.height;
+    int Nx = img_size.width;  
     // Define conversions in x and y from pixels space to meters (approximate values for camera)
     float ym_per_pix = 30.0 / 720; // meters per pixel in y dimension
     float xm_per_pix = 3.7 / 700 ; // meters per pixel in x dimension
@@ -136,7 +132,7 @@ std::vector<double> Lane::cf_px2m(std::vector<double> poly_cf_px, cv::Shape img_
     // parabola: a + b * x + c * x*x;
     std::vector<double> poly_cf_m { xm_per_pix * (poly_cf_px[0] - Nx / 2 + Ny * (poly_cf_px[1] + poly_cf_px[2] * Ny)),
                                     -(2 * xm_per_pix / ym_per_pix * Ny * poly_cf_px[2] + xm_per_pix / ym_per_pix * poly_cf_px[1]),
-                                    xm_per_pix / (ym_per_pix ** 2) * poly_cf_px[2] };
+                                    xm_per_pix / (ym_per_pix * ym_per_pix) * poly_cf_px[2] };
                                     
     return std::move(poly_cf_m);
 }
@@ -199,10 +195,8 @@ void Road::aggregate_frame_fit(Lane new_lane){
         
         // get more reliable estimate of local curvature by averaging inside the buffer
         // assess goodness of fit to determine outlier range (more reliable ==> higher sigma threshold which redues filtering)
-        float sigma_out_left = 1.0  + 9.0*static_cast<float>(y_left_[MAX]  - y_left_[MIN])/N_y;
-        float sigma_out_right = 1.0 + 9.0*static_cast<float>(y_right_[MAX] - y_right_[MIN])/N_y;
-        std::cout << "sigma factors : [" <<  sigma_out_left << " , " << sigma_out_right <<"\n";
-        // TODO: delete couts!
+        float sigma_out_left  = 1.0 + 9.0*static_cast<float>(y_left_[MAX]  - y_left_[MIN])/Ny_;
+        float sigma_out_right = 1.0 + 9.0*static_cast<float>(y_right_[MAX] - y_right_[MIN])/Ny_;
 
         // left lane marking
         if( !stats_left_.has_NaN(new_lane.left_cfs()) && !stats_left_.is_outlier(new_lane.left_cfs(), sigma_out_left)){
@@ -251,15 +245,5 @@ void Road::aggregate_frame_fit(Lane new_lane){
 
     // y = 0 is further to the car, keep track of nearest x=f(max(y)), which is more reliable
     x_near_[LEFT]  = a_[LEFT]  + b_[LEFT] * Ny_ + c_[LEFT] * Ny_ * Ny_;
-    x_near_[RIGHT] = a_[RIGHT] + b_[RIGHT]* Ny_ + c_[RIGHT]* Ny_ * Ny_;
-
-    // std::cout << "ML(a, b, c) = (" << a_[LEFT] << "," << b_[LEFT]  << ", " << c_[LEFT] <<")\n";
-    // std::cout << "MR(a, b, c) = (" << a_[RIGHT] << "," << b_[RIGHT]  << ", " << c_[RIGHT] <<")\n";
-    // std::cout << "xn=["<< x_near_[LEFT] << ", " << x_near_[RIGHT] <<"]\n";
-
-    // std::vector<double> vv1 = stats_left_.stddev();
-    // if (!vv1.empty()) std::cout << "STDL(a, b, c) = (" << vv1[0] << "," << vv1[1]  << ", " << vv1[2] <<")\n";
-    // std::vector<double> vv2 = stats_right_.stddev();
-    // if (!vv2.empty())  std::cout << "STDR(a, b, c) = (" << vv2[0] << "," << vv2[1]  << ", " << vv2[2] <<")\n";
-    
+    x_near_[RIGHT] = a_[RIGHT] + b_[RIGHT]* Ny_ + c_[RIGHT]* Ny_ * Ny_;  
 }

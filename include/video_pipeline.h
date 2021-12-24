@@ -40,12 +40,12 @@ class VideoPipeline{
         Warp2TopDown topdown_transform;
         Lane local_lane_fit;
         Road road_fit;
-        std::queue<double> r_curve;
+        std::queue<double> radius_m;
 
 
     public:
         //constructor
-        VideoPipeline(std::string file_in, std::string win_label, float frame_reduction, int n_buffer);
+        VideoPipeline(std::string file_in, std::string win_label = "Input Video", float frame_reduction = 1.0, int n_buffer = 20);
 
         bool read_video(std::string path);
         bool write_video(std::string path, cv::Size output_size);

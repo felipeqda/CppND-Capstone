@@ -1,7 +1,7 @@
 #include "annotate.h"
 #include "math.h"
 
-cv::Mat annotate::add_side_panel(cv::Mat & frame_in){
+cv::Mat annotate::add_side_panel(cv::Mat & frame_in, double r_fwd, double r_rear){
     cv::Mat car = cv::imread("../data/car_top.png");
     cv::Size car_size = cv::Size(40, 90);
     // resize and zero-pad horizontally
@@ -16,6 +16,29 @@ cv::Mat annotate::add_side_panel(cv::Mat & frame_in){
     cv::Mat side_bar;
     cv::vconcat(h_blank, car, side_bar);
     cv::vconcat(side_bar, h_blank, side_bar);
+
+    // draw curves
+    std::vector<cv::Point> c1l, c1r, c2l, c2r;
+    float px2m = 40/1.7;
+    for(int i = 0; i < 100; ++i) {
+        double ang = M_PI / 2.0 * (1.0 + static_cast<double>(i)/100); // pi/2 to pi
+        // curve ahead (in pixels)
+        double x_ctr = r_fwd > 0 ? 1: -1;
+        c1l.emplace_back(cv::Point(panel_width/2 + car_size.width/2 + px2m * r_fwd * (x_ctr + std::cos(ang)), px2m* r_fwd * std::sin(ang)));
+        c1r.emplace_back(cv::Point(panel_width/2 - car_size.width/2 + px2m * r_fwd * (x_ctr + std::cos(ang)), px2m* r_fwd * std::sin(ang)));
+
+        // curve back (in pixels)
+        ang += M_PI/2;
+        x_ctr = r_rear > 0 ? 1: -1;
+        c2l.emplace_back(cv::Point(panel_width/2 + car_size.width/2 + px2m * r_rear * (x_ctr + std::cos(ang)), px2m * r_rear * std::sin(ang)));
+        c2r.emplace_back(cv::Point(panel_width/2 - car_size.width/2 + px2m * r_rear * (x_ctr + std::cos(ang)), px2m * r_rear * std::sin(ang)));
+
+    }
+    cv::polylines(side_bar, c1l, false, cv::Scalar(255, 255, 255), 2);
+    cv::polylines(side_bar, c1r, false, cv::Scalar(255, 255, 255), 2);
+    cv::polylines(side_bar, c2l, false, cv::Scalar(255, 255, 255), 2);
+    cv::polylines(side_bar, c2r, false, cv::Scalar(255, 255, 255), 2);
+    
 
     // add to frame
     cv::Mat frame_out;

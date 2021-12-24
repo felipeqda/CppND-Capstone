@@ -316,7 +316,7 @@ template class BufferStats<int>;
 // compute radius of curvature of a x=f(y) parabola, usually taken at bottom of image
 double r_curve(std::vector<double>polycoef, float y){
     // parabola: a + b * x + c * x*x
-    return ((1 + (2 * polycoef[2] * y + polycoef[1]) ** 2) ** 1.5 / np.abs(2 * polycoef[2]));
+    return std::sqrt((1 + std::pow(2 * polycoef[2] * y + polycoef[1], 2)) / std::fabs(2 * polycoef[2]));
 }
 // ---------------------------------------
 

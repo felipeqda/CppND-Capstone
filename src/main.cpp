@@ -15,7 +15,7 @@
 static void help(){
     std::cout
         << "------------------------------------------------------------------------------" << std::endl
-        << "This program shows a video"                                                     << std::endl
+        << "This program shows a video with a lane identification pipeline                " << std::endl
         << "Usage:"                                                                         << std::endl
         << "./[executable] <referenceVideo>"                                                << std::endl
         << "--------------------------------------------------------------------------"     << std::endl

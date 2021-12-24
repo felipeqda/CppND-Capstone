@@ -29,7 +29,7 @@ class Lane{
         std::vector<int> yleft();
         std::vector<int> yright();
         std::vector<std::vector<cv::Point>> getPolygon(bool filter=false);
-        std::vector<double> cf_px2m(std::vector<double> poly_cf_px, cv::Shape img_shape);
+        std::vector<double> cf_px2m(std::vector<double> poly_cf_px, cv::Size img_size);
     
     friend class Road;
 };
