@@ -30,3 +30,6 @@ gcc -std=c++14 tensorflow_example.cpp -o tf_example -I /home/workspace/tensorflo
 
 
 
+ eval "$(ssh-agent -s)"
+ ssh-add /home/workspace/.shh/id_rsa
+
