@@ -9,7 +9,7 @@
 // tensorflow headers for loading model
 #include <tensorflow/cc/saved_model/loader.h>
 #include <tensorflow/cc/saved_model/tag_constants.h>
-// #include "tensorflow/cc/client/client_session.h"
+#include "tensorflow/cc/client/client_session.h"
 
 // #include "tensorflow/cc/ops/const_op.h"
 // #include "tensorflow/cc/ops/image_ops.h"
@@ -42,22 +42,21 @@ namespace tf = tensorflow;
 // gather the output of the convolutional neural network (boxes containing objects, scores and labels)
 class ClassifierOutput{
     public:
-        ClassifierOutput(std::vector<float> tf_box, float tf_score, int tf_label);
+        ClassifierOutput(std::vector<int> & tf_box, float & tf_score, float & tf_label);
 		// acessors
-		std::vector<float> box()  { return box_;  }
-		std::vector<float> score(){ return score_; }
-		std::vector<float> label(){ return label_; }
+		std::vector<int> box()  { return box_;  }
+		float score(){ return score_; }
+		int label(){ return label_; }
     private:
         std::vector<int> box_;
         float score_;
         int label_;
-		// index to access the output nodes according to model
-		int idx_box_, idx_score_, idx_label_; 
 };
 
-ClassifierOutput::ClassifierOutput(std::vector<float> tf_box, float tf_score, int tf_label){
+// container for information of a given box
+ClassifierOutput::ClassifierOutput(std::vector<int> & tf_box, float & tf_score, float & tf_label){
 	for(auto coord_tf_box: tf_box){
-		box_.emplace_back(coord);
+		box_.emplace_back(coord_tf_box);
 	}		
 	score_ = tf_score;
 	label_ = tf_label;
@@ -69,10 +68,12 @@ class TFModel{
 		tf::SavedModelBundle bundle_;
 		tf::SessionOptions session_options_;
 		tf::RunOptions run_options_;
-        tf::Status status_:
+        tf::Status status_;
 		// behaviour
 		void load_model_(std::string path2model);
 		std::vector<tf::Tensor> run_model_(tf::Tensor const & input_tensor);
+		// index to access the output nodes according to model
+		int idx_box_, idx_score_, idx_label_, idx_n_; 
 	public:
 		TFModel(std::string path2model);  // constructor loading the saved model from file
 		std::vector<ClassifierOutput> processFrame(cv::Mat const & framein, int COI, float threshold);  // run the model on input image
@@ -87,17 +88,17 @@ TFModel::TFModel(std::string path2model){
 
 // load model from disk
 void TFModel::load_model_(std::string path2model){		
-	tf::session_options.config.mutable_gpu_options()->set_allow_growth(true);	
-	status_ = tf::LoadSavedModel(session_options, run_options, path2model, {"serve"}, &bundle);	
-	if !(status_.ok()) std::cout << "Error in loading TF model: " << path2model << std::endl);
+	session_options_.config.mutable_gpu_options()->set_allow_growth(true);	
+	status_ = tf::LoadSavedModel(session_options_, run_options_, path2model, {"serve"}, &bundle_);	
+	if (!status_.ok()) std::cout << "Error in loading TF model: " << path2model << std::endl;
 }
 
 // run the model (IO in form of Tensors)
 std::vector<tf::Tensor> TFModel::run_model_(tf::Tensor const & input_tensor){
 	std::vector<tf::Tensor> tf_outputs;
 	std::string input_layer = "serving_default_input_tensor:0";
-	std::vector<std::pair<string, tf::Tensor>> tf_inputs  = {{input_layer, input_tensor}};
-	std::vector<string> output_layer = {
+	std::vector<std::pair<tf::string, tf::Tensor>> tf_inputs  = {{input_layer, input_tensor}};
+	std::vector<tf::string> output_layer = {
 		{"StatefulPartitionedCall:0", 	// detection_anchor_indices
 		 "StatefulPartitionedCall:1",	// detection_boxes
 		 "StatefulPartitionedCall:2", 	// detection_classes
@@ -107,11 +108,11 @@ std::vector<tf::Tensor> TFModel::run_model_(tf::Tensor const & input_tensor){
 	// set indices for retrieval according to the layer order description
 	idx_box_ = 1;
 	idx_label_ = 2;
-	idx_score_ = 4
+	idx_score_ = 4;
 	idx_n_ = 5;
 
 	status_ = this->bundle_.GetSession()->Run(tf_inputs, output_layer, {}, &tf_outputs);
-	if !(status_.ok()) std::cout << "Error in running TF model!" << std::endl);
+	if (!status_.ok()) std::cout << "Error in running TF model!" << std::endl;
 	return tf_outputs;
 }
 
@@ -123,9 +124,9 @@ tf::Tensor cvMat2tensor (cv::Mat const & frame_mat){
 	// get pointer to memory for that Tensor
 	uint8_t *ptr_aux = frame_tensor.flat<tensorflow::uint8>().data();
 	// create a "fake" cv::Mat from it 
-	cv::Mat cameraImg(frame_mat.rows, frame_mat.cols, cv::CV_32FC3, ptr_aux);
+	cv::Mat cameraImg(frame_mat.rows, frame_mat.cols, CV_32FC3, ptr_aux);
 	// use it here as a destination
-	frame_mat.convertTo(cameraImg, cv::CV_32FC3);  //cv::CV_8UC3 ?
+	frame_mat.convertTo(cameraImg, CV_32FC3);  //cv::CV_8UC3 ?
 	return frame_tensor;
 }
 
@@ -136,30 +137,30 @@ std::vector<ClassifierOutput> TFModel::processFrame(cv::Mat const & frame_in, in
 	int frame_width = frame_size.width;
 
 	tf::Tensor tf_model_input = cvMat2tensor(frame_in);
-	std::vector<tf::Tensor> cnn_detections = self->run_model(tf_model_input);
+	std::vector<tf::Tensor> cnn_detections = this->run_model_(tf_model_input);
 	
 	// decode the model output (vector of tensors) ==> indices match node description
-	nboxes = cnn_detection[idx_n_];
-	auto cnn_boxes =  cnn_detection[idx_box_].tensor<float, 3>();
-	auto cnn_scores = cnn_detection[idx_score_].tensor<float, 2>();
-	auto cnn_labels = cnn_detection[idx_label_].tensor<float, 2>();
+	int nboxes = cnn_detections[idx_n_].tensor<int, 1>()(0);
+	auto cnn_boxes =  cnn_detections[idx_box_].tensor<float, 3>();
+	auto cnn_scores = cnn_detections[idx_score_].tensor<float, 2>();
+	auto cnn_labels = cnn_detections[idx_label_].tensor<float, 2>();
 
 	std::vector<ClassifierOutput> detections; // output container
 	for (int i =0; i<nboxes; ++i){
 		// restrict to class of interest?
-		if( (COI != -1) && (ccn_labels(0,i) != COI) ) continue;
+		if( (COI != -1) && (cnn_labels(0,i) != COI) ) continue;
 		
 		// retrict to above threshold
-		if (cnn_score(0,i) < threshold) continue;
+		if (cnn_scores(0,i) < threshold) continue;
 
 		// result ok, pack results into object...
 		// opencv-rectangle compatible pixel coordinates
-		int ymin = static_cast<int> (ccn_boxes(0,i,0) * frame_height);
-		int xmin = static_cast<int> (ccn_boxes(0,i,1) * frame_width);
-		int h = static_cast<int> (ccn_boxes(0,i,2) * frame_height) - ymin;
-		int w = static_cast<int> (ccn_boxes(0,i,3) * frame_width) - xmin;
+		int ymin = static_cast<int> (cnn_boxes(0,i,0) * frame_height);
+		int xmin = static_cast<int> (cnn_boxes(0,i,1) * frame_width);
+		int h = static_cast<int> (cnn_boxes(0,i,2) * frame_height)- ymin;
+		int w = static_cast<int> (cnn_boxes(0,i,3) * frame_width) - xmin;
 		std::vector<int> px_coords{xmin, ymin, w, h};
-		detections.emplace_back(ClassifierOutput(px_coords, cnn_score(0,i), ccn_labels(0,i)));
+		detections.emplace_back(ClassifierOutput(px_coords, cnn_scores(0,i), cnn_labels(0,i)));
 	}
 	return detections;
 }
@@ -183,20 +184,24 @@ int main(int argc, char* argv[]){
 	TFModel ccn{model_path};  // constructor loading the saved model from file
 
 	// Run on the input image
-	std::vector<ClassifierOutput> out = ccn.processFrame(img);  // run the model on input image
+	std::vector<ClassifierOutput> obj_list = ccn.processFrame(img);  // run the model on input image
 
     // Create Window
 	const char* WIN_OUT = "Output Window"; // window label
     cv::namedWindow(WIN_OUT, cv::WINDOW_AUTOSIZE);
     cv::moveWindow( WIN_OUT, 400       , 0);         
 	cv::Size frame_size = img.size();
-    std::cout << "Input frame size: Width=" << frameSize.width << "  Height=" << frameSize.height << std::endl;
+    std::cout << "Input frame size: Width=" << frame_size.width << "  Height=" << frame_size.height << std::endl;
 
-	std::cout << "Boxes found: " << boxes.size() << std::endl;
+	std::cout << "No. of boxes found: " << obj_list.size() << std::endl;
 
-	for (int i=0; i < boxes.size(); ++i){
-		cv::Rect rect = cv::Rect(boxes[i][0], boxes[i][1], boxes[i][2], boxes[i][3]);
+	for (int i=0; i < obj_list.size(); ++i){
+		// xmin, ymin, width, height
+		std::vector<int> box = obj_list[i].box();
+		cv::Rect rect = cv::Rect(box[0], box[1], box[2], box[3]);
 		cv::rectangle(img, rect, cv::Scalar(0, 0, 255), 2);
+		cv::putText(img, std::string{obj_list[i].label()}, cv::Point(box[0], box[1]+20), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 255), 2);
+		cv::putText(img, std::string{obj_list[i].score()}, cv::Point(box[0], box[1]+10), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 255), 2);
 	}
     
 	// display

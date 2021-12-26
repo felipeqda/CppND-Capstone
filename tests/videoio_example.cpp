@@ -5,11 +5,12 @@
 #include <string>   // for strings
 #include <iomanip>  // for controlling float print precision
 #include <sstream>  // string to number conversion
-#include <opencv2/core.hpp>     // Basic OpenCV structures (cv::Mat, Scalar)
-#include <opencv2/imgproc.hpp>  // Gaussian Blur
-#include <opencv2/videoio.hpp>
-#include <opencv2/highgui.hpp>  // OpenCV window I/O
+#include "opencv2/core.hpp"     // Basic OpenCV structures (cv::Mat, Scalar)
+#include "opencv2/imgproc.hpp"  // Gaussian Blur
+#include "opencv2/videoio.hpp"
+#include "opencv2/highgui.hpp"  // OpenCV window I/O
 #include "tqdm.h"               // progress bar (external module)
+
 
 // key code aliases (cf. https://www.c-sharpcorner.com/blogs/ascii-key-code-value1)
 namespace keys{
