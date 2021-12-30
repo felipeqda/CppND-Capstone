@@ -42,7 +42,7 @@ int main(int argc, char *argv[]){
 
     std::string input_file = std::string("../data/project_video.mp4");
     float img_reduction = 0.5;
-    bool use_cnn{true}, default_video{true};
+    bool use_cnn{false}, default_video{true};
 
     // command line interface
     if( argc > 1 ) {
@@ -99,7 +99,6 @@ int main(int argc, char *argv[]){
             // note std::ref required for pass-by-ref in this context
             thd_futures.push_back(std::async(std::launch::async, &VideoPipeline::apply_cnn_thread, &pipeline, 
                                              std::ref(frame_in), std::ref(objs), std::move(cv::Scalar(-128, -128, -128)), false, 0.3, 0.1) );
-            // objs = pipeline.apply_cnn(frame_in, cv::Scalar(-128, -128, -128), false, 0.3, 0.1);  // non-parallel call 
         }     
 
         // call image processing pipeline on frame (masking and frame annotation)

@@ -69,7 +69,8 @@
 			"set": "cpp",
 			"string": "cpp",
 			"codecvt": "cpp",
-			"filesystem": "cpp"
+			"filesystem": "cpp",
+			"future": "cpp"
 		}
 	}
 }

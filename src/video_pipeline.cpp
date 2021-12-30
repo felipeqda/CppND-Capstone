@@ -153,8 +153,6 @@ cv::Mat VideoPipeline::apply_processing(cv::Mat frame_in){
     // III) apply color transformations and gradients to mask lane markings
     mask = ImgProcessing::get_lane_limits_mask(frame_warp);
 
-      // DEBUG: Mask out output frame (for visualization)
-      // frame_warp = ImgProcessing::mask_frame(frame_warp, mask);
 
     // IV) get fit from mask
     std::vector<ImgProcessing::LaneLine> lanes = ImgProcessing::fit_xy_from_mask(mask, frame_warp);
@@ -164,21 +162,13 @@ cv::Mat VideoPipeline::apply_processing(cv::Mat frame_in){
 
     // V) Annotate
     // show each lane
-    // annotate::annotate_lanes(lanes, frame_warp);
-    // show fitted area as overlay
-    // std::vector<std::vector<cv::Point>> polygon = local_lane_fit.getPolygon();
     std::vector<std::vector<cv::Point>> polygon = road_fit.getPolygon();
     cv::Mat overlay = cv::Mat(frame_in.size(), frame_in.type());
     cv::fillPoly(overlay, polygon, cv::Scalar(0,255,0)); 
-    
-      // DEBUG: show in warped mode
-      // cv::addWeighted(overlay, 0.1, frame_warped, 1.0, 0.0, frame_out); // alpha overlay
-    
+        
     // VI) De-Warp annotated image
     overlay = topdown_transform.unwarp(overlay);
     cv::addWeighted(overlay, 0.1, frame_in, 1.0, 0.0, frame_out); // alpha overlay
-    // annotate::annotate_unwarpedlanes(lanes, topdown_transform, frame_out);
-    // annotate::annotate_unwarpedlanes(local_lane_fit, topdown_transform, frame_out);
     annotate::annotate_unwarpedlanes(road_fit, topdown_transform, frame_out);
 
     // VII) indicate curvature radius and add side frame
@@ -189,7 +179,6 @@ cv::Mat VideoPipeline::apply_processing(cv::Mat frame_in){
     frame_out = annotate::add_side_panel(frame_out, radius_m.front(), radius_m.back());
 
   	return std::move(frame_out);
-    // return std::move(frame_in);
 }
 
 // ccn interface 
