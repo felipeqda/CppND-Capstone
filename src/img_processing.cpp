@@ -1,5 +1,5 @@
 #include "img_processing.h"
-#include "math.h"
+#include "math_lib.h"
 
 // ---------------------------------
 // I) Warping Tools

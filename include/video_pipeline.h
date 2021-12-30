@@ -8,12 +8,15 @@
 #include <opencv2/videoio.hpp>
 #include <opencv2/highgui.hpp>  // OpenCV window I/O
 #include <queue>
+#include <mutex>
+#include <future>
 
 #include "tqdm.h"
 #include "keyboard_interface.h"
 #include "calibration.h"
 #include "img_processing.h"
 #include "lane.h"
+#include "neural_network.h"
 
 class VideoPipeline{
     private:
@@ -41,7 +44,8 @@ class VideoPipeline{
         Lane local_lane_fit;
         Road road_fit;
         std::queue<double> radius_m;
-
+        NeuralNetwork cnn;
+        std::mutex mtx;  // allow paralelization
 
     public:
         //constructor
@@ -55,6 +59,11 @@ class VideoPipeline{
         void display(cv::Mat frame);
 
         cv::Mat apply_processing(cv::Mat frame);
+        cv::Mat calibrate(const cv::Mat & frame_in);
+        // object-detection related
+        std::vector<Detection> apply_cnn(const cv::Mat& frame, const cv::Scalar& mean, bool swap_RB, double conf_thresh, double nms_thresh);
+        void apply_cnn_thread(const cv::Mat& frame, std::vector<Detection> & objs, const cv::Scalar& mean, bool swap_RB, double conf_thresh, double nms_thresh);
+        void annotate_objs(cv::Mat & frame, const std::vector<Detection> & objs, cv::Scalar color = cv::Scalar(0, 0, 255));
 
         // interface logic
         bool quit_loop(bool verbose);
@@ -68,6 +77,9 @@ class VideoPipeline{
         }
         int frame_count(){ 
             return n_frames; 
+        }
+        int frame_idx(){
+            return idx_frame;
         }
         float reduction(){
             return frame_reduction_;

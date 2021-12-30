@@ -1,5 +1,5 @@
 #include "annotate.h"
-#include "math.h"
+#include "math_lib.h"
 
 cv::Mat annotate::add_side_panel(cv::Mat & frame_in, double r_fwd, double r_rear){
     cv::Mat car = cv::imread("../data/car_top.png");
@@ -130,4 +130,11 @@ void annotate::annotate_unwarpedlanes(Road & road, Warp2TopDown & transform,
     line = EvalFit<cv::Point>(road.right_cfs(), y, true);  // only pts.y is used
     line = transform.unwarp_path(line);
     cv::polylines(frame, line, false, color, 2);    
+}
+
+
+void annotate::annotate_objs(cv::Mat & frame, const std::vector<Detection> & objs, cv::Scalar color){
+    for (size_t idx = 0; idx < objs.size(); ++idx) {
+        cv::rectangle(frame, objs[idx].box, color, 2);
+    }
 }

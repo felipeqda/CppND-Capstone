@@ -2,7 +2,7 @@
 #include "keyboard_interface.h"
 #include "calibration.h"
 #include "img_processing.h"
-#include "math.h"
+#include "math_lib.h"
 #include "annotate.h"
 
 // constructor
@@ -37,6 +37,29 @@ VideoPipeline::VideoPipeline(std::string input_file,
     local_lane_fit = Lane();
     road_fit = Road(n_buffer); // set size of buffer for lane smoothing
     radius_m = std::queue<double>();
+
+    // Neural network for object detection
+    // cf for yolo: https://pjreddie.com/darknet/yolo/
+    cnn = NeuralNetwork(cv::String("../data/darknet/data/yolov3-tiny.weights"), cv::String("../data/darknet/cfg/yolov3-tiny.cfg"),
+                        cv::String("../data/darknet/data/object_detection_classes_pascal_voc.txt"), "", cv::Size(416, 416), 0.004,
+                        0,0); // backend, target
+    // backends (int)
+    // 0: automatically (by default)
+    // 1: Halide language (http://halide-lang.org/)
+    // 2: Intel's Deep Learning Inference Engine (https://software.intel.com/openvino-toolkit)
+    // 3: OpenCV implementation
+    // 4: VKCOM,
+    // 5: CUDA
+
+    // target (int)
+    // 0: CPU target (by default),
+    // 1: OpenCL
+    // 2: OpenCL fp16 (half-float precision)
+    // 3: VPU
+    // 4: Vulkan
+    // 6: CUDA
+    // 7: CUDA fp16 (half-float preprocess)
+
 }
 
 // open video for reading, return success flag
@@ -92,24 +115,40 @@ void VideoPipeline::display(cv::Mat frame){
     cv::imshow(window_name.c_str(), frame);
 }
 
+void VideoPipeline::annotate_objs(cv::Mat & frame, const  std::vector<Detection> & objs, cv::Scalar color){
+    // if currently being altered by parallel thread, ignore
+    std::unique_lock<std::mutex> lck(mtx, std::try_to_lock);
+    if(lck.owns_lock()){;
+        annotate::annotate_objs(frame, objs, color);
+        lck.unlock();
+    }
+}
+
 // interface signal to quit
 bool VideoPipeline::quit_loop(bool verbose=false){
     return keyboard_interface(kb_delay, default_delay, verbose);
 }    
 
-// main pipeline image processing 
+
+// undistort image in place
+cv::Mat VideoPipeline::calibrate(const cv::Mat & frame_in){
+    // I) Calibration: Undistort image based on calibration parameters ==> first step of processing required by nn and masking
+    if(!cal_available){      
+        cal = get_calibration_params();  
+        cal_available=true;
+    }
+    cv::Mat frame_out;
+    cv::undistort(std::move(frame_in), frame_out, cal.cam_matrix, cal.dist_coeff);
+    return std::move(frame_out);
+}
+
+// main pipeline for image processing 
 cv::Mat VideoPipeline::apply_processing(cv::Mat frame_in){
 	cv::Mat frame_out, frame_warp, mask;  // pass by value ==> copy
     
-  	// I) Calibration: Undistort image based on calibration parameters
-    if(!cal_available){      
-  		cal = get_calibration_params();  
-      	cal_available=true;
-    }
-   	cv::undistort(std::move(frame_in), frame_out, cal.cam_matrix, cal.dist_coeff);
-
+  	
     // II) Warp image to bird's eye view
-    frame_warp = topdown_transform.warp(frame_out);
+    frame_warp = topdown_transform.warp(frame_in);
 
     // III) apply color transformations and gradients to mask lane markings
     mask = ImgProcessing::get_lane_limits_mask(frame_warp);
@@ -129,15 +168,15 @@ cv::Mat VideoPipeline::apply_processing(cv::Mat frame_in){
     // show fitted area as overlay
     // std::vector<std::vector<cv::Point>> polygon = local_lane_fit.getPolygon();
     std::vector<std::vector<cv::Point>> polygon = road_fit.getPolygon();
-    cv::Mat overlay = cv::Mat(frame_out.size(), frame_out.type());
+    cv::Mat overlay = cv::Mat(frame_in.size(), frame_in.type());
     cv::fillPoly(overlay, polygon, cv::Scalar(0,255,0)); 
     
       // DEBUG: show in warped mode
-      // cv::addWeighted(overlay, 0.1, frame_out, 1.0, 0.0, frame_out); // alpha overlay
+      // cv::addWeighted(overlay, 0.1, frame_warped, 1.0, 0.0, frame_out); // alpha overlay
     
     // VI) De-Warp annotated image
     overlay = topdown_transform.unwarp(overlay);
-    cv::addWeighted(overlay, 0.1, frame_out, 1.0, 0.0, frame_out); // alpha overlay
+    cv::addWeighted(overlay, 0.1, frame_in, 1.0, 0.0, frame_out); // alpha overlay
     // annotate::annotate_unwarpedlanes(lanes, topdown_transform, frame_out);
     // annotate::annotate_unwarpedlanes(local_lane_fit, topdown_transform, frame_out);
     annotate::annotate_unwarpedlanes(road_fit, topdown_transform, frame_out);
@@ -152,3 +191,14 @@ cv::Mat VideoPipeline::apply_processing(cv::Mat frame_in){
   	return std::move(frame_out);
     // return std::move(frame_in);
 }
+
+// ccn interface 
+std::vector<Detection> VideoPipeline::apply_cnn(const cv::Mat& frame, const cv::Scalar& mean, bool swap_RB,
+                                                double conf_thresh, double nms_thresh){                                                
+    return cnn.run(frame, mean, swap_RB, conf_thresh, nms_thresh);
+}
+// ccn interface (overload for parallelization)
+void VideoPipeline::apply_cnn_thread(const cv::Mat& frame, std::vector<Detection> & obj_list, const cv::Scalar& mean, bool swap_RB,
+                                     double conf_thresh, double nms_thresh){                                                
+    cnn.run(frame, obj_list, mtx, mean, swap_RB, conf_thresh, nms_thresh);
+} 

@@ -4,7 +4,7 @@
 #include <vector>
 #include <queue>
 #include "opencv2/core.hpp"
-#include "math.h"
+#include "math_lib.h"
 #include "img_processing.h"
 
 // store information of left and right lined in a frame, which characterizes the lane
