@@ -18,7 +18,11 @@
 // requires a higher version of g++
 # if __has_include(<filesystem>)
     #include <filesystem>  
-    namespace fs = std::filesystem;  clear
+	#ifdef __APPLE__
+		namespace fs = std::__fs::filesystem;
+	#else
+		namespace fs = std::filesystem;
+	#endif
 #else
     // works for virtual machine version ==> requires target_link_libraries(... stdc++fs) in CMakeLists.txt
     #include <experimental/filesystem>
@@ -31,7 +35,7 @@ static void help(){
         << "--------------------------------------------------------------------------------------------" << std::endl
         << "This program shows a video with a lane-identification pipeline and optional object detection" << std::endl
         << "Usage:"                                                                                       << std::endl
-        << "./videopipe -f <referenceVideo.mp4>  [--cnn]                                                " << std::endl
+        << "./videopipe -f <referenceVideo.mp4>  [--nocnn]                                                " << std::endl
         << "--------------------------------------------------------------------------------------------" << std::endl
         << std::endl;
 }
@@ -42,7 +46,7 @@ int main(int argc, char *argv[]){
 
     std::string input_file = std::string("../data/project_video.mp4");
     float img_reduction = 0.5;
-    bool use_cnn{false}, default_video{true};
+    bool use_cnn{true}, default_video{true};
 
     // command line interface
     if( argc > 1 ) {
@@ -55,9 +59,9 @@ int main(int argc, char *argv[]){
                 std::cout << "selected input video: " << input_file << std::endl;
                 if (!fs::exists( fs::path(input_file) ) ) throw std::invalid_argument("input video does not exist!");
             }                
-            // --cnn ==> activate cnn
-            if( std::string_view{argv[i]} == "--cnn"){
-                use_cnn = true;
+            // --nocnn ==> de-activate cnn
+            if( std::string_view{argv[i]} == "--nocnn"){
+                use_cnn = false;
                 std::cout << "using object-detection neural network!" << std::endl;
             }
         }
@@ -65,10 +69,10 @@ int main(int argc, char *argv[]){
 
     if(default_video) {
       	// inform user and take default value vehicles
-        std::cout << "------------------------------------------------------------ " << std::endl;
-        std::cout << "Using default input in " << input_file                         << std::endl;
-        if(!use_cnn) std::cout << "set --cnn to detect objects in the video!"        << std::endl;
-        std::cout << "------------------------------------------------------------ " << std::endl;
+        std::cout << "------------------------------------------------------------ "      << std::endl;
+        std::cout << "Using default input in " << input_file                              << std::endl;
+        if(use_cnn) std::cout << "set --nocnn to skip detecting the objects in the video!"<< std::endl;
+        std::cout << "------------------------------------------------------------ "      << std::endl;
     } 
 
 

@@ -9,7 +9,11 @@
 // requires a higher version of g++
 # if __has_include(<filesystem>)
     #include <filesystem>  
-    namespace fs = std::filesystem;  clear
+	#ifdef __APPLE__
+		namespace fs = std::__fs::filesystem;
+	#else
+		namespace fs = std::filesystem;
+	#endif
 #else
     // works for virtual machine version ==> requires target_link_libraries(... stdc++fs) in CMakeLists.txt
     #include <experimental/filesystem>
